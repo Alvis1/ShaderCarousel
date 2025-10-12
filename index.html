@@ -1,14 +1,480 @@
 <html>
   <head>
-    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <meta charset="utf-8">
+    <title>TSL Shader Demo</title>
+    
+    <!-- Import maps for Three.js WebGPU -->
+    <script type="importmap">
+    {
+        "imports": {
+            "aframe": "./components/three/aframe-master.module.min.js",
+            "three": "./components/three/super-three.webgpu.js",
+            "three/webgpu": "./components/three/super-three.webgpu.js",
+            "three/tsl": "./components/three/super-three.tsl.js"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import AFRAME from 'aframe';
+        import * as THREE from 'three';
+        
+        // Set up global THREE for A-Frame compatibility
+        const THREE_GLOBAL = {};
+        const copyKeys = [...Object.getOwnPropertyNames(THREE), ...Object.getOwnPropertySymbols(THREE)];
+        for (const key of copyKeys) {
+            const descriptor = Object.getOwnPropertyDescriptor(THREE, key) ?? { enumerable: true };
+            Object.defineProperty(THREE_GLOBAL, key, {
+                value: THREE[key],
+                enumerable: descriptor.enumerable,
+                configurable: true,
+                writable: true
+            });
+        }
+        window.THREE = THREE_GLOBAL;
+    </script>
+    
+    <!-- Load TSL Shader Component -->
+    <script src="./shaderloader03.js"></script>
   </head>
   <body>
     <a-scene stats>
       <a-box position="-1 0.5 -3" rotation="0 45 0" color="#4CC3D9"></a-box>
-      <a-sphere position="0 1.25 -5" radius="1.25" color="#EF2D5E"></a-sphere>
+
+      <a-sphere position="0 1.25 -5" radius="1.25" 
+                tsl-shader="src: ./tsl/camouflage.js; count: 1; size: 0.4; blur: 0.3; color: #444444; background: #F0F8FF"></a-sphere>
+
+
       <a-cylinder position="1 0.75 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
       <a-plane position="0 0 -4" rotation="-90 0 0" width="4" height="4" color="#7BC8A4"></a-plane>
       <a-sky color="#ECECEC"></a-sky>
     </a-scene>
   </body>
 </html>
+
+<!-- 
+===================================================================
+TSL SHADER PARAMETERS REFERENCE
+===================================================================
+
+All TSL shaders support the following parameters in their attributes:
+- src: path to the shader file (e.g., "./tsl/marble.js")
+- All parameters listed below for each specific shader
+
+Usage example:
+<a-sphere tsl-shader="src: ./tsl/marble.js; scale: 2; thinness: 8; color: #FF0000; background: #FFFFFF"></a-sphere>
+
+Color parameters can be specified as:
+- Hex values: #FF0000, #F00
+- Color names: red, blue, white, etc.
+- RGB values: 255,0,0
+
+Vector3 parameters (like shift, angles, center): use format "x,y,z" (e.g., "0.5,1.0,-0.2")
+Vector2 parameters (like selectorAngles): use format "x,y" (e.g., "0.5,1.0")
+
+===================================================================
+AVAILABLE TSL SHADERS AND THEIR PARAMETERS:
+===================================================================
+
+brain.js:
+  scale: 2 (number)
+  smooth: 0.5 (number)
+  wave: 0.5 (number)
+  speed: 2.5 (number)
+  color: #FFD0D0 (color)
+  background: #500000 (color)
+  seed: 0 (number)
+
+camouflage.js:
+  scale: 2 (number)
+  colorA: #c2bea8 (color)
+  colorB: #9c895e (color)
+  colorC: #92a375 (color)
+  colorD: #717561 (color)
+  seed: 0 (number)
+
+caustics.js:
+  scale: 2 (number)
+  speed: 0 (number)
+  color: #50A8C0 (color)
+  seed: 0 (number)
+
+cave-art.js:
+  scale: 2 (number)
+  thinness: 2 (number)
+  noise: 0.3 (number)
+  color: #D34545 (color)
+  background: #FFF8F0 (color)
+  seed: 0 (number)
+
+circle-decor.js:
+  scale: 2 (number)
+  grains: 0.2 (number)
+  complexity: 1 (number)
+  blur: 0.2 (number)
+  color: #000000 (color)
+  background: #FFFFFF (color)
+  seed: 0 (number)
+
+circles.js:
+  scale: 2 (number)
+  variety: 1 (number)
+  color: #F0E0D0 (color)
+  flat: 0 (number)
+  seed: 0 (number)
+
+clouds.js:
+  scale: 2 (number)
+  density: 0.5 (number)
+  opacity: 1 (number)
+  color: #FFFFFF (color)
+  subcolor: #A0A0B0 (color)
+  seed: 0 (number)
+
+concrete.js:
+  scale: 2 (number)
+  density: 0.5 (number)
+  bump: 0.5 (number)
+  seed: 0 (number)
+
+cork.js:
+  scale: 1 (number)
+  straight: 1 (number)
+  noise: 0.3 (number)
+  color: #fff0c0 (color)
+  background: #d08060 (color)
+  seed: 0 (number)
+
+crumpled-fabric.js:
+  scale: 2 (number)
+  pinch: 0.5 (number)
+  color: #B0F0FF (color)
+  subcolor: #4040F0 (color)
+  background: #003000 (color)
+  seed: 0 (number)
+
+dalmatian-spots.js:
+  scale: 2 (number)
+  density: 0.6 (number)
+  color: #FFFFFF (color)
+  background: #000000 (color)
+  seed: 0 (number)
+
+darth-maul.js:
+  scale: 2 (number)
+  shift: 0,0,0 (Vector3)
+  complexity: 0 (number)
+  angle: 60 (number)
+  distance: 1.9 (number)
+  color: #F04040 (color)
+  background: #000000 (color)
+  balance: 0 (number)
+  seed: 0 (number)
+
+dyson-sphere.js:
+  scale: 2 (number)
+  complexity: 2 (number)
+  variation: 0 (number)
+  color: #c0d0ff (color)
+  background: #000000 (color)
+  seed: 0 (number)
+
+entangled.js:
+  scale: 2 (number)
+  density: 10 (number)
+  color: #002040 (color)
+  background: #FFFFFF (color)
+  seed: 0 (number)
+
+fordite.js:
+  scale: 2 (number)
+  color: #000000 (color)
+  seed: 0 (number)
+
+gas-giant.js:
+  scale: 2 (number)
+  turbulence: 0.3 (number)
+  blur: 0.6 (number)
+  colorA: #FFF8F0 (color)
+  colorB: #F0E8B0 (color)
+  colorC: #AFA0D0 (color)
+  seed: 0 (number)
+
+grid.js:
+  countU: 32 (number)
+  countV: 16 (number)
+  thinness: 0.8 (number)
+  color: #000000 (color)
+  background: #FFFFFF (color)
+  flat: 0 (number)
+
+isolayers.js:
+  scale: 2 (number)
+  layers: 10 (number)
+  edge: 0.5 (number)
+  darkness: 0 (number)
+  color: #FFFFF0 (color)
+  background: #FF4040 (color)
+  seed: 0 (number)
+
+isolines.js:
+  scale: 2 (number)
+  density: 40 (number)
+  blur: 0.3 (number)
+  thinness: 0.6 (number)
+  color: #FFFFFF (color)
+  background: #000000 (color)
+  seed: 0 (number)
+
+karst-rock.js:
+  scale: 2 (number)
+  color: #FFF4F0 (color)
+  background: #D0D0D0 (color)
+  seed: 0 (number)
+
+marble.js:
+  scale: 1.2 (number)
+  thinness: 5 (number)
+  noise: 0.3 (number)
+  color: #4545D3 (color)
+  background: #F0F8FF (color)
+  seed: 0 (number)
+
+neon-lights.js:
+  scale: 1.5 (number)
+  thinness: 0.8 (number)
+  mode: 0 (number) // 0=additive, 1=subtractive
+  colorA: #FF0000 (color)
+  colorB: #00FF00 (color)
+  colorC: #0000FF (color)
+  background: #000000 (color)
+  seed: 0 (number)
+
+photosphere.js:
+  scale: 2 (number)
+  color: #FFFF00 (color)
+  background: #FF0000 (color)
+  seed: 0 (number)
+
+planet.js:
+  scale: 2 (number)
+  iterations: 5 (number)
+  levelSea: 0.3 (number)
+  levelMountain: 0.7 (number)
+  balanceWater: 0.3 (number)
+  balanceSand: 0.2 (number)
+  balanceSnow: 0.8 (number)
+  colorDeep: #123a59 (color)
+  colorShallow: #87CEEB (color)
+  colorBeach: #FFFACD (color)
+  colorGrass: #3CB371 (color)
+  colorForest: #003000 (color)
+  colorSnow: #F0FFFF (color)
+  seed: 0 (number)
+
+polka-dots.js:
+  count: 2 (number)
+  size: 0.5 (number)
+  blur: 0.25 (number)
+  color: #000000 (color)
+  background: #FFFFFF (color)
+  flat: 0 (number)
+
+processed-wood.js:
+  scale: 2 (number)
+  lengths: 4 (number)
+  strength: 0.3 (number)
+  angle: 0 (number)
+  color: #702020 (color)
+  background: #F0D0A0 (color)
+  seed: 0 (number)
+
+protozoa.js:
+  scale: 1.5 (number)
+  fat: 0.7 (number)
+  amount: 0.4 (number)
+  color: #A0A0A0 (color)
+  subcolor: #E0E8FF (color)
+  background: #F0F8FF (color)
+  seed: 0 (number)
+
+reticular-veins.js:
+  scale: 2 (number)
+  reticulation: 5 (number)
+  strength: 0.2 (number)
+  organelles: 0.2 (number)
+  color: #FFFFF0 (color)
+  background: #208020 (color)
+  seed: 0 (number)
+
+roman-paving.js:
+  scale: 2 (number)
+  depth: 0.5 (number)
+  seed: 0 (number)
+
+rotator.js:
+  angles: 0.4,-0.6,0 (Vector3)
+  center: 0,0,0 (Vector3)
+  selectorCenter: 0,0,0 (Vector3)
+  selectorAngles: 0,0 (Vector2)
+  selectorWidth: 2 (number)
+
+rough-clay.js:
+  scale: 2 (number)
+  bump: 0.5 (number)
+  curvature: 0.2 (number)
+  seed: 0 (number)
+
+runny-eggs.js:
+  scale: 1 (number)
+  sizeYolk: 0.2 (number)
+  sizeWhite: 0.7 (number)
+  colorYolk: orange (color)
+  colorWhite: white (color)
+  colorBackground: lightgray (color)
+  seed: 0 (number)
+
+rust.js:
+  scale: 2 (number)
+  iterations: 8 (number)
+  amount: -0.3 (number)
+  opacity: 0.5 (number)
+  noise: 0.5 (number)
+  noiseScale: 0.5 (number)
+  color: #C08000 (color)
+  background: #000020 (color)
+  seed: 0 (number)
+
+satin.js:
+  scale: 2 (number)
+  color: #7080FF (color)
+  background: #000050 (color)
+  seed: 0 (number)
+
+scaler.js:
+  scales: 0.01,0.9,1.7 (Vector3)
+  center: 0,0,0 (Vector3)
+  selectorCenter: 0,0,0 (Vector3)
+  selectorAngles: 0,0 (Vector2)
+  selectorWidth: 2 (number)
+
+scepter-head.js:
+  xFactor: 10 (number)
+  yFactor: 22 (number)
+  zFactor: 10 (number)
+  colorRim: #FFFFFF (color)
+  colorA: #70E0FF (color)
+  colorB: #3000FF (color)
+
+scream.js:
+  scale: 2 (number)
+  variety: 1 (number)
+  color: #F0F060 (color)
+  background: #D09090 (color)
+  seed: 0 (number)
+
+simplex-noise.js:
+  scale: 2 (number)
+  balance: 0 (number)
+  contrast: 0 (number)
+  color: #FFFFFF (color)
+  background: #000000 (color)
+  seed: 0 (number)
+
+stars.js:
+  scale: 2 (number)
+  density: 2 (number)
+  variation: 0 (number)
+  color: #fff5f0 (color)
+  background: #000060 (color)
+  seed: 0 (number)
+
+static-noise.js:
+  scale: 2 (number)
+  balance: 0 (number)
+  contrast: 0 (number)
+  delay: 0 (number)
+  seed: 0 (number)
+
+supersphere.js:
+  exponent: 3 (number)
+
+tiger-fur.js:
+  scale: 2 (number)
+  lengths: 4 (number)
+  blur: 0.3 (number)
+  strength: 0.3 (number)
+  hairs: 0.5 (number)
+  color: #FFAA00 (color)
+  bottomColor: #FFFFEE (color)
+  seed: 0 (number)
+
+translator.js:
+  distance: -0.5,0,0.2 (Vector3)
+  selectorCenter: 0,0,0 (Vector3)
+  selectorAngles: 0,0 (Vector2)
+  selectorWidth: 0.7 (number)
+
+turbulent-smoke.js:
+  scale: 2 (number)
+  speed: 0 (number)
+  details: 5 (number)
+  seed: 0 (number)
+
+voronoi-cells.js:
+  scale: 2 (number)
+  variation: 0 (number)
+  facet: 0 (number)
+  color: #000000 (color)
+  background: #c0d0ff (color)
+  seed: 0 (number)
+
+water-drops.js:
+  scale: 1.4 (number)
+  density: 0.5 (number)
+  bump: 0.6 (number)
+  seed: 0 (number)
+
+watermelon.js:
+  scale: 2 (number)
+  stripes: 12 (number)
+  variation: 0.5 (number)
+  noise: 0.25 (number)
+  color: yellowgreen (color)
+  background: darkgreen (color)
+  flat: 0 (number)
+  seed: 0 (number)
+
+wood.js:
+  scale: 2.5 (number)
+  rings: 4.5 (number)
+  lengths: 1 (number)
+  angle: 0 (number)
+  fibers: 0.3 (number)
+  fibersDensity: 10 (number)
+  color: 0.8,0.4,0 (RGB color)
+  background: 0.4,0.1,0 (RGB color)
+  seed: 0 (number)
+
+zebra-lines.js:
+  scale: 2 (number)
+  thinness: 0.5 (number)
+  phi: 0 (number)
+  theta: 0 (number)
+  color: #000000 (color)
+  background: #FFFFFF (color)
+  flat: 0 (number)
+
+===================================================================
+SPECIAL SHADER NOTES:
+===================================================================
+
+- concrete.js, rough-clay.js, water-drops.js: These generate normal maps and affect surface lighting
+- grid.js: Uses countU/countV instead of scale for grid resolution
+- rotator.js, scaler.js, translator.js: Transform shaders that modify geometry position
+- supersphere.js: Shape modifier that creates supersphere geometry
+- melter.js: Currently has no default parameters defined
+- fordite.js: Generates rainbow coloring, main color parameter controls blending
+- planet.js: Complex terrain shader with multiple color layers and elevation controls
+
+-->
