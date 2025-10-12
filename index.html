@@ -1,118 +1,14 @@
-<!doctype html>
 <html>
   <head>
-    <meta charset="utf-8" />
-    <title>WebGPURenderer and TSL • A-Frame</title>
-    <meta name="description" content="WebGPU renderer and TSL • A-Frame" />
-    <script type="importmap">
-      {
-        "imports": {
-          "aframe": "./aframe-master.module.min.js",
-          "three": "./super-three.webgpu.js",
-          "three/webgpu": "./super-three.webgpu.js",
-          "three/tsl": "./super-three.tsl.js",
-          "three/addons/": "./three-addons/"
-        }
-      }
-    </script>
-    <script type="module">
-      import AFRAME from 'aframe';
-      import * as THREE from 'three';
-      import { color, cos, float, mix, range, sin, time, uniform, uv, vec3, vec4, PI2 } from 'three/tsl';
-      import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-
-      const THREE_GLOBAL = {};
-      const copyKeys = [...Object.getOwnPropertyNames(THREE), ...Object.getOwnPropertySymbols(THREE)];
-      for (const key of copyKeys) {
-        const descriptor = Object.getOwnPropertyDescriptor(THREE, key) ?? { enumerable: true };
-        Object.defineProperty(THREE_GLOBAL, key, {
-          value: THREE[key],
-          enumerable: descriptor.enumerable,
-          configurable: true,
-          writable: true
-        });
-      }
-      window.THREE = THREE_GLOBAL;
-
-      AFRAME.registerComponent('galaxy', {
-        init() {
-          const material = new THREE.SpriteNodeMaterial({
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
-          });
-
-          const size = uniform(0.08);
-          material.scaleNode = range(0, 1).mul(size);
-
-          const radiusRatio = range(0, 1);
-          const radius = radiusRatio.pow(1.5).mul(5).toVar();
-
-          const branches = 3;
-          const branchAngle = range(0, branches).floor().mul(PI2.div(branches));
-          const angle = branchAngle.add(time.mul(radiusRatio.oneMinus()));
-
-          const position = vec3(cos(angle), 0, sin(angle)).mul(radius);
-
-          const randomOffset = range(vec3(-1), vec3(1)).pow(3).mul(radiusRatio).add(0.2);
-
-          material.positionNode = position.add(randomOffset);
-
-          const colorInside = uniform(color('#ffa575'));
-          const colorOutside = uniform(color('#311599'));
-          const colorFinal = mix(colorInside, colorOutside, radiusRatio.oneMinus().pow(2).oneMinus());
-          const alpha = float(0.1).div(uv().sub(0.5).length()).sub(0.2);
-          material.colorNode = vec4(colorFinal, alpha);
-
-          const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), material, 20000);
-          this.el.setObject3D('mesh', mesh);
-
-          // debug
-
-          const gui = new GUI();
-          this.gui = gui;
-
-          gui.add(size, 'value', 0, 1, 0.001).name('size');
-
-          gui
-            .addColor({ color: colorInside.value.getHex(THREE.SRGBColorSpace) }, 'color')
-            .name('colorInside')
-            .onChange(function (value) {
-              colorInside.value.set(value);
-            });
-
-          gui
-            .addColor({ color: colorOutside.value.getHex(THREE.SRGBColorSpace) }, 'color')
-            .name('colorOutside')
-            .onChange(function (value) {
-              colorOutside.value.set(value);
-            });
-        },
-        remove() {
-          const mesh = this.el.getObject3D('mesh');
-          if (mesh) {
-            mesh.material.dispose();
-            mesh.geometry.dispose();
-            this.el.removeObject3D('mesh');
-            this.gui.destroy();
-          }
-        }
-      });
-    </script>
-    <script defer src="./aframe-orbit-controls.min.js"></script>
+    <script src="aframe170.min.js"></script>
   </head>
   <body>
-    <a-scene stats background="color: #201919" info-message="htmlSrc: #messageText">
-
-      <a-entity galaxy></a-entity>
-      <a-box></a-box>
-      <a-entity light="distance: 1.96; type: point" position="-1.4199 1.24703 0.8022"></a-entity>
-      
-      <a-entity
-        camera="fov: 50; near: 0.1; far: 100"
-        look-controls="enabled: false"
-        orbit-controls="target: 0 0 0; minDistance: 0.1; maxDistance: 50; initialPosition: 4 2 5; enableDamping: true; rotateSpeed: 1"
-      ></a-entity>
+    <a-scene stats >
+      <a-box position="-1 0.5 -3" rotation="0 45 0" color="#4CC3D9"></a-box>
+      <a-sphere position="0 1.25 -5" radius="1.25" color="#EF2D5E"></a-sphere>
+      <a-cylinder position="1 0.75 -3" radius="0.5" height="1.5" color="#FFC65D"></a-cylinder>
+      <a-plane position="0 0 -4" rotation="-90 0 0" width="4" height="4" color="#7BC8A4"></a-plane>
+      <a-sky color="#ECECEC"></a-sky>
     </a-scene>
   </body>
 </html>
