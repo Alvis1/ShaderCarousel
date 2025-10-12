@@ -1,8 +1,13 @@
+﻿
 //	TSL-Textures: Stars
 
+
+
 import { Color } from "three";
-import { abs, exp, mix, positionGeometry, select } from 'three/tsl';
+import { abs, add, exp, mix, positionGeometry, select } from 'three/tsl';
 import { hsl, noise, prepare, toHsl, TSLFn } from './tsl-utils.js';
+
+
 
 var defaults = {
 	$name: 'Stars',
@@ -17,6 +22,8 @@ var defaults = {
 	seed: 0,
 };
 
+
+
 var stars = TSLFn( ( params ) => {
 
 	params = prepare( params, defaults );
@@ -27,15 +34,14 @@ var stars = TSLFn( ( params ) => {
 
 	k = k.mul( exp( params.density.sub( 2 ) ) );
 
-	k = k.clamp( 0, 1 );
+	var dS = select( k.greaterThan( 0.1 ), params.variation.mul( noise( pos ) ), 0 );
 
-	var hslColor = toHsl( params.color );
-	var hslBackground = toHsl( params.background );
+	var col = toHsl( mix( params.background, params.color, k ) );
 
-	hslColor.x = hslColor.x.add( noise( pos.mul( 2 ) ).mul( params.variation.div( 10 ) ) );
-
-	return mix( hsl( hslBackground.x, hslBackground.y, hslBackground.z ), hsl( hslColor.x, hslColor.y, hslColor.z ), k );
+	return hsl( add( col.x, dS ), col.y, col.z );
 
 }, defaults );
+
+
 
 export { stars };

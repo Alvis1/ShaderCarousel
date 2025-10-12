@@ -1,3 +1,4 @@
+﻿
 //	Equirectangular Texture Generator - TSL Utility Functions
 //
 //	hsl( h, s, l ):vec3 			- convert from hsl to rgb
@@ -5,8 +6,12 @@
 //	spherical( phi, theta ):vec3	- from angles to point on unit sphere
 //	applyEuler( vec:vec3, eu:vec3 ):vec3 - apply Euler rotation to a vector
 
+
+
 import { add, cos, cross, dFdx, dFdy, float, Fn, If, log2, mat4, max, min, mul, mx_noise_float, positionGeometry, pow, remap, select, sin, smoothstep, sub, transformNormalToView, uniform, vec3, vec4 } from 'three/tsl';
 import { Color, Vector3 } from 'three';
+//import { mx_perlin_noise_float as noise } from 'https://cdn.jsdelivr.net/npm/three@0.167.0/src/nodes/materialx/lib/mx_noise.js';
+
 
 // helper function - convert hsl to rgb, ported to TSL from:
 // https://en.wikipedia.org/wiki/HSL_and_HSV#HSL_to_RGB_alternative
@@ -29,6 +34,8 @@ hslHelper.setLayout( {
 		{ name: 'n', type: 'float' },
 	]
 } );
+
+
 
 // convert from hsl to rgb
 const hsl = Fn( ([ h, s, l ]) => {
@@ -54,6 +61,7 @@ hsl.setLayout( {
 		{ name: 'l', type: 'float' },
 	]
 } );
+
 
 // convert from rgb to hsl
 const toHsl = Fn( ([ rgb ]) => {
@@ -89,7 +97,6 @@ const toHsl = Fn( ([ rgb ]) => {
 				H.assign( sub( R, G ).div( delta ).add( 4 ) );
 
 			} );
-
 		H.divAssign( 6 );
 
 	} );
@@ -104,6 +111,9 @@ toHsl.setLayout( {
 		{ name: 'rgb', type: 'vec3' },
 	]
 } );
+
+
+
 
 // make all elements dynamic (i.e. uniform)
 function dynamic( params ) {
@@ -127,6 +137,8 @@ function dynamic( params ) {
 
 }
 
+
+
 // convert phi-theta angles to position on unit sphere
 const spherical = Fn( ([ phi, theta ]) => {
 
@@ -147,53 +159,75 @@ spherical.setLayout( {
 	]
 } );
 
+
+
 // apply Euler rotation to a vector
 const applyEuler = Fn( ([ vec, eu ]) => {
 
 	var quat = quaternionFromEuler( eu );
-	return rotateVector( quat, vec );
+	return applyQuaternion( vec, quat );
 
 } );
 
 applyEuler.setLayout( {
 	name: 'applyEuler',
-	type: 'vec3',
+	type: 'vec4',
 	inputs: [
 		{ name: 'vec', type: 'vec3' },
 		{ name: 'eu', type: 'vec3' },
 	]
 } );
 
-// quaternion from euler angles
+
+// convert Euler XYZ angles to quaternion
 const quaternionFromEuler = Fn( ([ eu ]) => {
 
-	const c1 = cos( eu.x.div( 2 ) );
-	const c2 = cos( eu.y.div( 2 ) );
-	const c3 = cos( eu.z.div( 2 ) );
-	const s1 = sin( eu.x.div( 2 ) );
-	const s2 = sin( eu.y.div( 2 ) );
-	const s3 = sin( eu.z.div( 2 ) );
+	var c1 = cos( eu.x.div( 2 ) );
+	var c2 = cos( eu.y.div( 2 ) );
+	var c3 = cos( eu.z.div( 2 ) );
 
-	const x = s1.mul( c2 ).mul( c3 ).add( c1.mul( s2 ).mul( s3 ) );
-	const y = c1.mul( s2 ).mul( c3 ).sub( s1.mul( c2 ).mul( s3 ) );
-	const z = c1.mul( c2 ).mul( s3 ).add( s1.mul( s2 ).mul( c3 ) );
-	const w = c1.mul( c2 ).mul( c3 ).sub( s1.mul( s2 ).mul( s3 ) );
+	var s1 = sin( eu.x.div( 2 ) );
+	var s2 = sin( eu.y.div( 2 ) );
+	var s3 = sin( eu.z.div( 2 ) );
 
-	return vec4( x, y, z, w );
-
-} );
-
-// rotate vector by quaternion
-const rotateVector = Fn( ([ quat, vec ]) => {
-
-	const qvec = vec3( quat.x, quat.y, quat.z );
-	const uv = cross( qvec, vec );
-	const uuv = cross( qvec, uv );
-	return vec.add( uv.mul( quat.w.mul( 2 ) ) ).add( uuv.mul( 2 ) );
+	return vec4(
+		add( mul( s1, c2, c3 ), mul( c1, s2, s3 ) ),
+		sub( mul( c1, s2, c3 ), mul( s1, c2, s3 ) ),
+		add( mul( c1, c2, s3 ), mul( s1, s2, c3 ) ),
+		sub( mul( c1, c2, c3 ), mul( s1, s2, s3 ) ),
+	);
 
 } );
 
-// exponential remapping function
+quaternionFromEuler.setLayout( {
+	name: 'quaternionFromEuler',
+	type: 'vec4',
+	inputs: [
+		{ name: 'eu', type: 'vec3' },
+	]
+} );
+
+
+// apply quaternion rotation to a vector
+const applyQuaternion = Fn( ([ vec, quat ]) => {
+
+	var t = cross( quat.xyz, vec ).mul( 2 ).toVar( );
+
+	return add( vec, t.mul( quat.w ), cross( quat.xyz, t ) );
+
+} );
+
+applyQuaternion.setLayout( {
+	name: 'applyQuaternion',
+	type: 'vec3',
+	inputs: [
+		{ name: 'vec', type: 'vec3' },
+		{ name: 'quat', type: 'vec4' },
+	]
+} );
+
+
+// exponential version of remap
 const remapExp = Fn( ([ x, fromMin, fromMax, toMin, toMax ]) => {
 
 	x = remap( x, fromMin, fromMax, 0, 1 );
@@ -214,6 +248,8 @@ remapExp.setLayout( {
 	]
 } );
 
+
+
 // simple vector noise, vec3->float[-1,1]
 const vnoise = Fn( ([ v ])=>{
 
@@ -228,6 +264,8 @@ vnoise.setLayout( {
 		{ name: 'v', type: 'vec3' },
 	]
 } );
+
+
 
 // generate X-rotation matrix
 const matRotX = Fn( ([ angle ])=>{
@@ -251,6 +289,8 @@ matRotX.setLayout( {
 	]
 } );
 
+
+
 // generate Y-rotation matrix
 const matRotY = Fn( ([ angle ])=>{
 
@@ -272,6 +312,8 @@ matRotY.setLayout( {
 		{ name: 'angle', type: 'float' },
 	]
 } );
+
+
 
 // generate Z-rotation matrix
 const matRotZ = Fn( ([ angle ])=>{
@@ -295,10 +337,16 @@ matRotZ.setLayout( {
 	]
 } );
 
-// generate YXZ Euler rotation matrix
+
+
+// generate YXZ rotation matrix
 const matRotYXZ = Fn( ([ angles ])=>{
 
-	return matRotY( angles.y ).mul( matRotX( angles.x ) ).mul( matRotZ( angles.z ) );
+	var RX = matRotX( angles.x ),
+		RY = matRotY( angles.y ),
+		RZ = matRotZ( angles.z );
+
+	return RY.mul( RX ).mul( RZ );
 
 } );
 
@@ -309,6 +357,8 @@ matRotYXZ.setLayout( {
 		{ name: 'angles', type: 'vec3' },
 	]
 } );
+
+
 
 // generate scaling matrix
 const matScale = Fn( ([ scales ])=>{
@@ -329,6 +379,8 @@ matScale.setLayout( {
 	]
 } );
 
+
+
 // generate translation matrix
 const matTrans = Fn( ([ vector ])=>{
 
@@ -348,6 +400,7 @@ matTrans.setLayout( {
 	]
 } );
 
+
 const selectPlanar = Fn( ([ pos, selAngles, selCenter, selWidth ])=>{
 
 	// select zone in a plane through point selCenter,
@@ -357,12 +410,26 @@ const selectPlanar = Fn( ([ pos, selAngles, selCenter, selWidth ])=>{
 	// C is projected on segment AB
 	// result is [0,1] inside AB, 0 before A, 1 after B
 
-	var T = matTrans( selCenter.negate() );
-	var R = matRotYXZ( selAngles );
+	/* non-optimized version
+	var s = spherical(selAngles.x,selAngles.y).mul(selWidth).toVar(),
+		c = pos,
+		a = selCenter.sub(s.div(2)),
+		b = selCenter.add(s.div(2));
 
-	var localPos = R.mul( T ).mul( vec4( pos, 1 ) ).xyz;
+	var ca = a.sub(c),
+		ab = b.sub(a).toVar();
 
-	return smoothstep( selWidth.negate(), selWidth, localPos.z );
+	var caab = ca.dot(s),
+		abab = ab.dot(ab);
+
+	var k = caab.div(abab).negate();
+	*/
+
+	var s = spherical( selAngles.x, selAngles.y ).mul( selWidth ).toVar();
+
+	var k = selCenter.sub( s.div( 2 ) ).sub( pos ).dot( s ).div( s.dot( s ) ).negate();
+
+	return smoothstep( 0, 1, k );
 
 } );
 
@@ -371,79 +438,36 @@ selectPlanar.setLayout( {
 	type: 'float',
 	inputs: [
 		{ name: 'pos', type: 'vec3' },
-		{ name: 'selAngles', type: 'vec3' },
+		{ name: 'selAngles', type: 'vec2' },
 		{ name: 'selCenter', type: 'vec3' },
 		{ name: 'selWidth', type: 'float' },
 	]
 } );
 
-const overlayPlanar = Fn( ([ pos, selAngles, selCenter, selWidth, overlay ])=>{
 
-	var k = selectPlanar( pos, selAngles, selCenter, selWidth );
+const overlayPlanar = Fn( ( params )=>{
 
-	return k.oneMinus().mul( pos ).add( k.mul( overlay ) );
+	var zone = selectPlanar(
+		positionGeometry,
+		params.selectorAngles,
+		params.selectorCenter,
+		params.selectorWidth
+	).sub( 0.5 ).mul( 2 ).abs().oneMinus().pow( 0.25 ).negate().mul(
+		params.selectorShow
+	);
+
+	return vec3( 0, zone, zone );
 
 } );
 
-overlayPlanar.setLayout( {
-	name: 'overlayPlanar',
-	type: 'vec3',
-	inputs: [
-		{ name: 'pos', type: 'vec3' },
-		{ name: 'selAngles', type: 'vec3' },
-		{ name: 'selCenter', type: 'vec3' },
-		{ name: 'selWidth', type: 'float' },
-		{ name: 'overlay', type: 'vec3' },
-	]
-} );
 
-// fallback warning system
-var banner = null;
-var bannerCounter = 0;
 
-function showFallbackWarning( ) {
+const normalVector = Fn( ([ pos ])=>{
 
-	if ( !banner ) {
+	var dU = dFdx( pos ),
+		dV = dFdy( pos );
 
-		banner = document.createElement( 'div' );
-		banner.innerHTML = '<p>This page is using WebGPU with fallback to WebGL.<br>Click on this banner to hide it.</p>';
-		banner.style.cssText = 'position:fixed; top:20px; left:20px; right:20px; z-index:1000; background:yellow; color:black; text-align:center; padding:10px; border:2px solid red; border-radius:10px; font-family:monospace; cursor:pointer;';
-		banner.addEventListener( 'click', hideFallbackWarning );
-		document.body.appendChild( banner );
-
-	}
-
-	bannerCounter = 2;
-
-}
-
-function hideFallbackWarning( ) {
-
-	if ( banner ) {
-
-		if ( bannerCounter>0 )
-			bannerCounter--;
-		else {
-
-			banner.style.display = 'none';
-			banner = null;
-
-		}
-
-	}
-
-}
-
-// normal vector calculation
-const normalVector = Fn( ([ pos ]) => {
-
-	const eps = 0.001;
-	
-	const dx = dFdx( pos );
-	const dy = dFdy( pos );
-	const normal = cross( dx, dy ).normalize();
-	
-	return transformNormalToView( normal );
+	return transformNormalToView( cross( dU, dV ).normalize() );
 
 } );
 
@@ -455,28 +479,97 @@ normalVector.setLayout( {
 	]
 } );
 
-// converts all numeric, color and vector properties to nodes
-function prepare( userParams, defaults ) {
 
-	var propertyNames = [];
-	for ( var item of userParams ) {
+var banner = null;
+var bannerCounter = 10;
+async function showFallbackWarning( ) {
 
-	  if ( item && typeof item === 'object' ) {
+	if ( navigator.gpu != undefined ) {
 
-			propertyNames = Object.keys( item );
-			break;
+		var adapter = await navigator.gpu.requestAdapter();
+		if ( adapter ) return;
+
+	}
+
+	var html = `
+	<div style="font-size:1.25em; font-weight:bold;">PLEASE, WAIT</div>
+	<div  style="font-size:0.85em; font-weight:100;" >NO WEBGPU &mdash; TRYING WEBGL2</div>
+	<div id="counter"></div>
+	`;
+
+	banner = document.createElement( 'div' );
+	banner.innerHTML = html;
+
+	banner.style.left = 'calc(50% - 8em)';
+	banner.style.width = '16em';
+
+	banner.style.fontFamily = 'Bahnschrifts, Arial';
+	banner.style.position = 'absolute';
+	banner.style.bottom = '20px';
+	banner.style.padding = '12px 6px';
+	banner.style.border = '1px solid white';
+	banner.style.borderRadius = '4px';
+	banner.style.background = 'rgba(0,0,0,0.5)';
+	banner.style.color = 'white';
+	banner.style.textAlign = 'center';
+	banner.style.opacity = '0.8';
+	banner.style.outline = 'none';
+	banner.style.zIndex = '999';
+
+	document.body.appendChild( banner );
+
+}
+
+
+
+function hideFallbackWarning( ) {
+
+	if ( banner ) {
+
+		if ( bannerCounter>0 )
+			bannerCounter--;
+		else {
+
+			banner.style.display = 'none';
+			//		document.removeChild( banner );
+			banner = null;
 
 		}
 
 	}
 
+}
+
+
+
+// converts all numeric, color and vector properties to nodes
+function prepare( userParams, defaults ) {
+
 	var params = { ...defaults };
 
-	for ( var key of propertyNames ) {
+	// Handle case where userParams is a single object (most common case)
+	if ( userParams && typeof userParams === 'object' && !Array.isArray( userParams ) ) {
+		
+		for ( var key of Object.keys( userParams ) ) {
+			if ( typeof userParams[ key ] !== 'undefined' )
+				params[ key ] = userParams[ key ];
+		}
 
-		if ( typeof userParams[ key ] !== 'undefined' )
-			params[ key ] = userParams[ key ];
+	} else if ( Array.isArray( userParams ) ) {
+		
+		// Handle case where userParams is an array (legacy support)
+		var propertyNames = [];
+		for ( var item of userParams ) {
+			if ( item && typeof item === 'object' ) {
+				propertyNames = Object.keys( item );
+				break;
+			}
+		}
 
+		for ( var key of propertyNames ) {
+			if ( typeof userParams[ key ] !== 'undefined' )
+				params[ key ] = userParams[ key ];
+		}
 	}
 
 	for ( var name of Object.keys( params ) ) {
@@ -496,6 +589,8 @@ function prepare( userParams, defaults ) {
 
 }
 
+
+
 // generate scaled noise
 function noised( pos, scale=1, octave=1, seed=0 ) {
 
@@ -503,7 +598,46 @@ function noised( pos, scale=1, octave=1, seed=0 ) {
 
 }
 
-// TSL Function wrapper with proxy for compatibility
+
+
+// a shim (proposed by Grok) to recover from a change of how Fn
+// is proxied since Three.js v0.180.0
+
+// explanation from Grok:
+/*
+In 0.179.0, TSL.Fn likely returned a plain function, allowing a.defaults
+to work without Proxy interference. In 0.180.0, the Proxy wrapping an FnNode
+instance blocks defaults access (returns undefined) and requires specific FnNode
+behavior, making the wrapper incompatible.
+
+Solutions to Fix the Error and Access a.defaultsWe need a solution that:
+
+* Makes a.defaults directly accessible.
+* Preserves TSL compatibility by ensuring the object passed to TSL behaves
+like a TSL.Fn Proxy.
+* Avoids separate defaults variables.
+* Mimics the 0.179.0 API where a.defaults worked.
+
+Given the error, direct property access on the TSL.Fn Proxy (e.g., Object.defineProperty(a, 'defaults', {...})) fails because the get trap
+returns undefined for unknown properties on FnNode. The non-Proxy wrapper
+breaks TSL, so let’s try a refined approach that balances compatibility and
+accessibility.1. Proxy Wrapper with FnNode PrototypeInstead of a non-Proxy
+wrapper, create a Proxy that mimics TSL.Fn but stores defaults separately to
+bypass FnNode’s get behavior. To avoid breaking TSL, ensure the Proxy’s target
+has the FnNode prototype.
+
+Why This Might Work:
+
+* The Proxy’s target inherits the FnNode prototype (via fn.call), making it
+appear more like the original TSL.Fn Proxy to TSL’s checks.
+* defaults is stored in a Map, bypassing FnNode’s get trap that returns
+undefined.
+* a.fn exposes the original TSL.Fn Proxy for TSL operations.
+* Function calls (a(...)) are forwarded to the original Proxy.
+* Matches Object.getOwnPropertyDescriptor behavior.
+
+*/
+
 function TSLFn( jsFunc, defaults, layout = null ) {
 
 	var opacity = null;
@@ -558,7 +692,6 @@ function TSLFn( jsFunc, defaults, layout = null ) {
 			return Reflect.get( fn, prop, receiver ); // Forward to original Proxy
 
 		},
-
 		set( target, prop, value, receiver ) {
 
 			if ( prop === 'defaults' ) {
@@ -592,13 +725,11 @@ function TSLFn( jsFunc, defaults, layout = null ) {
 			return Reflect.set( fn, prop, value, receiver );
 
 		},
-
 		apply( target, thisArg, args ) {
 
 			return Reflect.apply( fn, thisArg, args ); // Delegate calls to original Proxy
 
 		},
-
 		getOwnPropertyDescriptor( target, prop ) {
 
 			if ( prop === 'defaults' ) {
@@ -637,11 +768,14 @@ function TSLFn( jsFunc, defaults, layout = null ) {
 
 } // TSLFn
 
-export {
+
+export
+{
 	mx_noise_float as noise
 } from 'three/tsl';
 
-export {
+export
+{
 	noised,
 	vnoise,
 	hsl,

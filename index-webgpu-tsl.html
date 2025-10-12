@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>A-Frame WebGPU TSL Shader Carousel</title>
+    <meta name="description" content="A-Frame WebGPU with TSL Textures">
+    
+    <!-- Use A-Frame 1.7.0 with WebGPU support -->
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    
+    <!-- Import Three.js WebGPU version -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.169.0/build/three.webgpu.js",
+            "three/tsl": "https://unpkg.com/three@0.169.0/build/three.webgpu.js",
+            "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <!-- TSL Material Component -->
+    <script type="module">
+        import * as THREE from 'three';
+        
+        // Register custom A-Frame component for TSL materials
+        AFRAME.registerComponent('tsl-material', {
+            schema: {
+                shader: {type: 'string', default: 'polka-dots'},
+                count: {type: 'number', default: 2},
+                size: {type: 'number', default: 0.5},
+                blur: {type: 'number', default: 0.25},
+                color: {type: 'color', default: '#000000'},
+                background: {type: 'color', default: '#ffffff'},
+                roughness: {type: 'number', default: 0.5},
+                metalness: {type: 'number', default: 0.0}
+            },
+            
+            init: function() {
+                this.setupTSLMaterial();
+            },
+            
+            setupTSLMaterial: async function() {
+                const data = this.data;
+                
+                // Dynamically import the TSL shader
+                try {
+                    const shaderModule = await import(`./tsl/${data.shader}.js`);
+                    const shaderFunction = shaderModule[this.convertToCamelCase(data.shader)];
+                    
+                    if (!shaderFunction) {
+                        console.error(`Shader function not found for ${data.shader}`);
+                        return;
+                    }
+                    
+                    // Create Three.js MeshStandardNodeMaterial
+                    const material = new THREE.MeshStandardNodeMaterial({
+                        roughness: data.roughness,
+                        metalness: data.metalness,
+                    });
+                    
+                    // Apply TSL shader to colorNode
+                    material.colorNode = shaderFunction({
+                        count: data.count,
+                        size: data.size,
+                        blur: data.blur,
+                        color: new THREE.Color(data.color),
+                        background: new THREE.Color(data.background)
+                    });
+                    
+                    // Apply material to the entity
+                    const mesh = this.el.getObject3D('mesh');
+                    if (mesh) {
+                        mesh.material = material;
+                    }
+                    
+                } catch (error) {
+                    console.error('Error loading TSL shader:', error);
+                }
+            },
+            
+            convertToCamelCase: function(str) {
+                return str.replace(/-([a-z])/g, function (g) { 
+                    return g[1].toUpperCase(); 
+                });
+            },
+            
+            update: function() {
+                this.setupTSLMaterial();
+            }
+        });
+    </script>
+
+    <a-scene 
+        renderer="colorManagement: true; physicallyCorrectLights: true;"
+        webgpu="true"
+        stats
+        vr-mode-ui="enabled: false">
+        
+        <!-- Assets -->
+        <a-assets>
+        </a-assets>
+        
+        <!-- Entities with TSL Materials -->
+        <a-box 
+            position="-3 1 -5" 
+            rotation="0 45 0" 
+            geometry="width: 2; height: 2; depth: 2"
+            tsl-material="shader: polka-dots; count: 3; size: 0.6; blur: 0.2; color: #ff0000; background: #ffffff">
+        </a-box>
+        
+        <a-sphere 
+            position="0 1.5 -5" 
+            radius="1.5" 
+            tsl-material="shader: circles; count: 4; size: 0.4; blur: 0.15; color: #0066ff; background: #ffff00">
+        </a-sphere>
+        
+        <a-cylinder 
+            position="3 1 -5" 
+            radius="1" 
+            height="2" 
+            tsl-material="shader: zebra-lines; count: 8; size: 0.5; blur: 0.1; color: #000000; background: #ffffff">
+        </a-cylinder>
+        
+        <!-- Ground plane with TSL texture -->
+        <a-plane 
+            position="0 0 -4" 
+            rotation="-90 0 0" 
+            width="20" 
+            height="20" 
+            tsl-material="shader: marble; count: 2; size: 0.3; blur: 0.2; color: #333333; background: #cccccc">
+        </a-plane>
+        
+        <!-- Sky with procedural texture -->
+        <a-sky 
+            tsl-material="shader: clouds; count: 1; size: 0.8; blur: 0.4; color: #87ceeb; background: #ffffff">
+        </a-sky>
+        
+        <!-- Lighting -->
+        <a-light type="ambient" color="#404040" intensity="0.4"></a-light>
+        <a-light type="directional" color="#ffffff" intensity="0.8" position="2 4 2"></a-light>
+        
+        <!-- Camera -->
+        <a-entity 
+            id="cameraRig" 
+            position="0 2 3">
+            <a-camera 
+                look-controls 
+                wasd-controls>
+            </a-camera>
+        </a-entity>
+    </a-scene>
+    
+    <!-- UI Controls -->
+    <div id="controls" style="position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 5px; font-family: Arial;">
+        <h3>TSL Shader Controls</h3>
+        <p>Available shaders: polka-dots, circles, zebra-lines, marble, clouds, and more...</p>
+        <p>Use browser developer tools to modify shader parameters</p>
+    </div>
+
+</body>
+</html>

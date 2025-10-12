@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>A-Frame + TSL Simple Example</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+</head>
+<body>
+    <script type="module">
+        // Import Three.js WebGPU
+        import * as THREE from 'https://unpkg.com/three@0.169.0/build/three.webgpu.js';
+        
+        // Simple TSL material component
+        AFRAME.registerComponent('simple-tsl', {
+            schema: {
+                type: {type: 'string', default: 'polka'}
+            },
+            
+            init: function() {
+                this.createTSLMaterial();
+            },
+            
+            createTSLMaterial: function() {
+                // For now, create a simple procedural material
+                // This is a simplified version without importing the full TSL files
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    roughness: 0.5,
+                    metalness: 0.1
+                });
+                
+                // Apply to mesh
+                const mesh = this.el.getObject3D('mesh');
+                if (mesh) {
+                    mesh.material = material;
+                }
+            }
+        });
+        
+        // Enable WebGPU renderer
+        document.addEventListener('DOMContentLoaded', () => {
+            const sceneEl = document.querySelector('a-scene');
+            if (sceneEl) {
+                sceneEl.setAttribute('renderer', 'colorManagement: true; antialias: true;');
+                sceneEl.setAttribute('webgpu', 'true');
+            }
+        });
+    </script>
+
+    <a-scene stats background="color: #001122">
+        
+        <!-- Entities -->
+        <a-box 
+            position="-2 1 -5" 
+            rotation="0 45 0"
+            simple-tsl="type: polka"
+            animation="property: rotation; to: 0 405 0; loop: true; dur: 10000">
+        </a-box>
+        
+        <a-sphere 
+            position="2 1 -5" 
+            radius="1.2"
+            simple-tsl="type: dots"
+            animation="property: position; to: 2 2 -5; dir: alternate; loop: true; dur: 2000">
+        </a-sphere>
+        
+        <!-- Lighting -->
+        <a-light type="ambient" color="#404040"></a-light>
+        <a-light type="directional" position="0 2 1"></a-light>
+        
+        <!-- Camera -->
+        <a-camera position="0 2 3" look-controls wasd-controls></a-camera>
+    </a-scene>
+</body>
+</html>
