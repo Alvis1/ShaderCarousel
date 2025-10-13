@@ -15,6 +15,7 @@
     }
     </script>
     
+
     <script type="module">
         import AFRAME from 'aframe';
         import * as THREE from 'three';
@@ -36,9 +37,16 @@
     
     <!-- Load TSL Shader Component -->
     <script src="./shaderloader03.js"></script>
+    
+    <!-- Load VR Profiler Component -->
+    <script src="./vrprofiler01.js"></script>
+    
   </head>
   <body>
     <a-scene stats>
+      <!-- 3D Performance Display in Center -->
+      <a-entity perfdata="position: 0 1.5 -2; color: #00ff00; size: 0.8; depth: 0.3; centerDisplay: true"></a-entity>
+      
       <a-box position="-1 0.5 -3" rotation="0 45 0" color="#4CC3D9"></a-box>
 
       <a-sphere position="0 1.25 -5" radius="1.25" 
