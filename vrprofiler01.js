@@ -192,6 +192,13 @@ class VRProfiler {
         const currentTimeSeconds = (performance.now() / 1000).toFixed(1);
         const shaderInfo = this.getCurrentShaderInfo();
         
+        // Get current carousel rotation angle
+        const carouselEntity = document.querySelector('[carousel]');
+        let rotationAngle = null;
+        if (carouselEntity && carouselEntity.components && carouselEntity.components.carousel) {
+            rotationAngle = carouselEntity.components.carousel.angle % 360;
+        }
+        
         let displayText = '';
         
         // Shader info at the top
@@ -220,38 +227,86 @@ class VRProfiler {
         // Performance metrics
         displayText += `Time: ${currentTimeSeconds}s<br>Frame Time: ${this.frameTime.toFixed(2)} ms<br>FPS: ${this.fps.toFixed(1)}<br>Meshes: ${this.meshCount}`;
         
+        // Show rotation angle and sampling status
+        if (rotationAngle !== null) {
+            const isAt90 = Math.abs(rotationAngle - 90) < this.angleThreshold;
+            const isAt270 = Math.abs(rotationAngle - 270) < this.angleThreshold;
+            const sampling = (isAt90 || isAt270) ? ' 🔴' : '';
+            displayText += `<br>Angle: ${rotationAngle.toFixed(1)}°${sampling}`;
+            displayText += `<br>Samples: ${this.performanceData.length}`;
+        }
+        
         this.uiElement.innerHTML = displayText;
     }
 
     startLogging() {
+        // Track last logged angle to prevent duplicate samples
+        this.lastLoggedAngle = null;
+        this.angleThreshold = 5; // Degrees of tolerance for angle detection
+        
         this.logInterval = setInterval(() => {
-            // Prevent memory leak by limiting array size
-            if (this.performanceData.length > 10000) {
-                this.performanceData.shift(); // Remove oldest entry
+            // Get current carousel rotation angle
+            const carouselEntity = document.querySelector('[carousel]');
+            if (!carouselEntity || !carouselEntity.components || !carouselEntity.components.carousel) {
+                return; // Carousel not ready yet
             }
             
-            const timestamp = performance.now();
-            const timeSeconds = parseFloat((timestamp / 1000).toFixed(1));
-            const shaderInfo = this.getCurrentShaderInfo();
+            const carousel = carouselEntity.components.carousel;
+            const currentAngle = carousel.angle % 360; // Normalize to 0-359 degrees
             
-            const logEntry = {
-                timeSeconds: timeSeconds,
-                timestampMs: parseFloat(timestamp.toFixed(2)),
-                frameTime: parseFloat(this.frameTime.toFixed(2)),
-                fps: parseFloat(this.fps.toFixed(1)),
-                meshCount: this.meshCount
-            };
+            // Check if we're at 90 or 270 degrees (with tolerance)
+            const isAt90 = Math.abs(currentAngle - 90) < this.angleThreshold;
+            const isAt270 = Math.abs(currentAngle - 270) < this.angleThreshold;
+            
+            // Only log if we're at target angle and haven't logged this angle recently
+            if (isAt90 || isAt270) {
+                const targetAngle = isAt90 ? 90 : 270;
+                
+                // Prevent duplicate samples at same angle position
+                if (this.lastLoggedAngle === targetAngle) {
+                    return;
+                }
+                
+                // Prevent memory leak by limiting array size
+                if (this.performanceData.length > 10000) {
+                    this.performanceData.shift(); // Remove oldest entry
+                }
+                
+                const timestamp = performance.now();
+                const timeSeconds = parseFloat((timestamp / 1000).toFixed(1));
+                const shaderInfo = this.getCurrentShaderInfo();
+                
+                const logEntry = {
+                    timeSeconds: timeSeconds,
+                    timestampMs: parseFloat(timestamp.toFixed(2)),
+                    frameTime: parseFloat(this.frameTime.toFixed(2)),
+                    fps: parseFloat(this.fps.toFixed(1)),
+                    meshCount: this.meshCount,
+                    rotationAngle: targetAngle // Record which angle we sampled at
+                };
 
-            // Only include shader info if it changed
-            if (shaderInfo.name !== this.lastShaderName || 
-                JSON.stringify(shaderInfo.params) !== JSON.stringify(this.lastShaderParams)) {
-                logEntry.shaderName = shaderInfo.name;
-                logEntry.shaderParams = shaderInfo.params;
-                this.lastShaderName = shaderInfo.name;
-                this.lastShaderParams = shaderInfo.params;
+                // Only include shader info if it changed
+                if (shaderInfo.name !== this.lastShaderName || 
+                    JSON.stringify(shaderInfo.params) !== JSON.stringify(this.lastShaderParams)) {
+                    logEntry.shaderName = shaderInfo.name;
+                    logEntry.shaderParams = shaderInfo.params;
+                    this.lastShaderName = shaderInfo.name;
+                    this.lastShaderParams = shaderInfo.params;
+                }
+                
+                this.performanceData.push(logEntry);
+                this.lastLoggedAngle = targetAngle;
+                
+                console.log(`Sample taken at ${targetAngle}° - FPS: ${logEntry.fps}, Shader: ${shaderInfo.name || 'None'}`);
+            } else {
+                // Reset last logged angle when we're between target angles (at 0° or 180°)
+                if (currentAngle < this.angleThreshold || 
+                    currentAngle > (360 - this.angleThreshold) ||
+                    Math.abs(currentAngle - 180) < this.angleThreshold) {
+                    this.lastLoggedAngle = null;
+                }
             }
-            this.performanceData.push(logEntry);
-        }, 500); // Log every 500ms (half second)
+        }, 100); // Check more frequently (every 100ms) to catch precise angles
     }
 
     checkCarouselStatus() {

@@ -4,42 +4,52 @@
 document.addEventListener('DOMContentLoaded', () => {
     AFRAME.registerComponent('tsl-shader', {
         schema: {
-            src: {type: 'string', default: 'polka-dots'},
-            count: {type: 'number', default: 2},
-            size: {type: 'number', default: 0.5},
-            blur: {type: 'number', default: 0.25},
-            color: {type: 'color', default: '#000000'},
-            background: {type: 'color', default: '#ffffff'},
-            roughness: {type: 'number', default: 0.5},
-            metalness: {type: 'number', default: 0.0},
-            flat: {type: 'number', default: 0},
-            seed: {type: 'number', default: 0}
+            type: 'string'
         },
+        
+        multiple: true,
         
         init() {
             this.setupMaterial();
         },
         
         async setupMaterial() {
-            const data = this.data;
+            const attrValue = this.el.getAttribute('tsl-shader');
+            
+            // Parse the attribute string manually
+            const params = {};
+            if (typeof attrValue === 'string') {
+                const pairs = attrValue.split(';').map(s => s.trim()).filter(s => s);
+                pairs.forEach(pair => {
+                    const [key, ...valueParts] = pair.split(':');
+                    const value = valueParts.join(':').trim();
+                    if (key && value) {
+                        params[key.trim()] = value;
+                    }
+                });
+            }
+            
+            const src = params.src || 'polka-dots';
+            const roughness = parseFloat(params.roughness) || 0.5;
+            const metalness = parseFloat(params.metalness) || 0.0;
             
             try {
                 let shaderPath, shaderFunctionName;
                 
-                if (data.src.includes('/') || data.src.endsWith('.js')) {
-                    shaderPath = data.src;
-                    const filename = data.src.split('/').pop().replace('.js', '');
+                if (src.includes('/') || src.endsWith('.js')) {
+                    shaderPath = src;
+                    const filename = src.split('/').pop().replace('.js', '');
                     shaderFunctionName = this.kebabToCamel(filename);
                 } else {
-                    shaderPath = `./tsl/${data.src}.js`;
-                    shaderFunctionName = this.kebabToCamel(data.src);
+                    shaderPath = `./tsl/${src}.js`;
+                    shaderFunctionName = this.kebabToCamel(src);
                 }
                 
                 const shaderModule = await import(shaderPath);
                 let shaderFunction = shaderModule[shaderFunctionName];
                 
                 if (!shaderFunction) {
-                    const alternatives = [data.src, data.src.toLowerCase(), 'default'];
+                    const alternatives = [src, src.toLowerCase(), 'default'];
                     for (const alt of alternatives) {
                         if (shaderModule[alt]) {
                             shaderFunction = shaderModule[alt];
@@ -54,17 +64,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 const material = new THREE.MeshStandardNodeMaterial({
-                    roughness: data.roughness,
-                    metalness: data.metalness
+                    roughness: roughness,
+                    metalness: metalness
                 });
                 
+                // Pass all parameters except src, roughness, metalness to the shader
                 const shaderParams = {};
-                ['count', 'size', 'blur', 'color', 'background', 'flat', 'seed'].forEach(key => {
-                    if (data[key] !== undefined) {
-                        if (key === 'color' || key === 'background') {
-                            shaderParams[key] = new THREE.Color(data[key]);
-                        } else {
-                            shaderParams[key] = data[key];
+                Object.keys(params).forEach(key => {
+                    if (key !== 'src' && key !== 'roughness' && key !== 'metalness') {
+                        const value = params[key];
+                        // Try to parse as number
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && value.trim() === numValue.toString()) {
+                            shaderParams[key] = numValue;
+                        } 
+                        // Check if it's a color (starts with #)
+                        else if (value.startsWith('#')) {
+                            shaderParams[key] = new THREE.Color(value);
+                        }
+                        // Otherwise keep as string
+                        else {
+                            shaderParams[key] = value;
                         }
                     }
                 });
