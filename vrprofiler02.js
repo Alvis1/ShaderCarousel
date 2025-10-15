@@ -1,123 +1,116 @@
 class VRProfiler {
-    constructor(options = {}) {
-        // Configurable options
-        this.config = {
-            scales: options.scales || [1, 3, 6, 10],
-            targetCycles: options.targetCycles || 4,
-            sampleAngles: options.sampleAngles || [90, 270],
-            angleThreshold: options.angleThreshold || 30,
-            sampleInterval: options.sampleInterval || 50,
-            maxSamples: options.maxSamples || 10000,
-            cycleDelay: options.cycleDelay || 3000,
-            carouselRetryLimit: options.carouselRetryLimit || 50
-        };
-
-        // Performance tracking
+    constructor() {
         this.lastTime = performance.now();
         this.frameTime = 0;
         this.fps = 0;
         this.meshCount = 0;
         this.performanceData = [];
-        
-        // Timers and intervals
         this.logInterval = null;
+        this.carouselStoppedCheckInterval = null;
         this.cycleCheckInterval = null;
-        this.cycleCompleteTimer = null;
+        this.downloadProposed = false;
         this.meshCountTimer = null;
-        
-        // State
-        this.currentScaleIndex = 0;
-        this.currentScale = this.config.scales[0];
-        this.completedCycles = 0;
-        this.maxMeshCount = null;
-        this.meshCountReached = false;
-        this.lastLoggedAngle = null;
         this.lastShaderName = null;
         this.lastShaderParams = null;
         
-        // Cached references (updated when carousel recreated)
-        this.carouselEntity = null;
-        this.carousel = null;
-
+        // Scale cycling properties
+        this.scales = [1, 3, 6, 10];
+        this.currentScaleIndex = 0;
+        this.currentScale = this.scales[0];
+        this.completedCycles = 0;
+        this.targetCycles = 4;
+        this.maxMeshCount = null; // Will be read from carousel properties
+        this.meshCountReached = false;
+        this.cycleCompleteTimer = null;
+        
+        // Track all created entities for proper cleanup
+        this.trackedEntities = new Set();
+        
+        // Store original template info (captured once at startup)
+        this.originalTemplateInfo = null;
+        
         this.createUI();
+        this.captureOriginalTemplate();
         this.startProfiling();
-        this.waitForCarousel();
-    }
-
-    /**
-     * Wait for carousel to be ready with retry limit
-     */
-    waitForCarousel(retries = 0) {
-        this.carouselEntity = document.querySelector('[carousel]');
-        
-        if (!this.carouselEntity) {
-            if (retries >= this.config.carouselRetryLimit) {
-                console.error('Carousel not found after maximum retries');
-                this.showNotification('Error: Carousel not found', 5000);
-                return;
-            }
-            setTimeout(() => this.waitForCarousel(retries + 1), 100);
-            return;
-        }
-
-        if (!this.carouselEntity.components || !this.carouselEntity.components.carousel) {
-            if (retries >= this.config.carouselRetryLimit) {
-                console.error('Carousel component not initialized after maximum retries');
-                this.showNotification('Error: Carousel not initialized', 5000);
-                return;
-            }
-            setTimeout(() => this.waitForCarousel(retries + 1), 100);
-            return;
-        }
-
-        this.carousel = this.carouselEntity.components.carousel;
-        this.maxMeshCount = this.carousel.data.maxCount || 5;
-        console.log(`✓ Carousel ready - maxCount: ${this.maxMeshCount}`);
-        
-        // Start monitoring now that carousel is ready
         this.startLogging();
         this.startCycleMonitoring();
+        this.startEntityTracking();
     }
 
-    /**
-     * Update cached carousel references after recreation
-     */
-    updateCarouselReferences() {
-        this.carouselEntity = document.querySelector('[carousel]');
-        if (this.carouselEntity && this.carouselEntity.components) {
-            this.carousel = this.carouselEntity.components.carousel;
+    captureOriginalTemplate() {
+        // Wait for carousel to initialize, then capture the template info
+        setTimeout(() => {
+            const carousel = document.querySelector('[carousel]');
+            if (!carousel) {
+                console.warn('Carousel not found, retrying...');
+                setTimeout(() => this.captureOriginalTemplate(), 100);
+                return;
+            }
+
+            // Get the first child - this is the template before any cloning happens
+            const template = carousel.querySelector('[tsl-shader]');
+            if (template) {
+                this.originalTemplateInfo = {
+                    tagName: template.tagName.toLowerCase(),
+                    radius: template.getAttribute('radius'),
+                    shaderAttr: template.getAttribute('tsl-shader')
+                };
+                console.log('✓ Captured original template info:', this.originalTemplateInfo);
+            } else {
+                console.error('Could not find template with tsl-shader attribute');
+            }
+        }, 500);
+    }
+
+    startEntityTracking() {
+        // Monitor for new entities added to the carousel
+        const carouselEntity = document.querySelector('[carousel]');
+        if (!carouselEntity) {
+            // Retry if carousel not ready yet
+            setTimeout(() => this.startEntityTracking(), 100);
+            return;
         }
+
+        // Use MutationObserver to track when new children are added
+        this.entityObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    // Only track A-Frame entities that are not templates
+                    if (node.nodeType === Node.ELEMENT_NODE && 
+                        node.tagName && 
+                        !node.hasAttribute('tsl-shader')) {
+                        this.trackedEntities.add(node);
+                    }
+                });
+            });
+        });
+
+        this.entityObserver.observe(carouselEntity, {
+            childList: true,
+            subtree: false
+        });
+
+        console.log('Entity tracking started');
     }
 
     createUI() {
         this.uiElement = document.createElement('div');
         this.uiElement.id = 'vr-profiler-window';
-        Object.assign(this.uiElement.style, {
-            position: 'fixed',
-            top: '10px',
-            right: '10px',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '5px',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            zIndex: '1000',
-            cursor: 'default',
-            minWidth: '200px',
-            maxWidth: '300px',
-            lineHeight: '1.3'
-        });
-        
-        // Create separate DOM elements for different parts (for efficient updates)
-        this.uiShaderInfo = document.createElement('div');
-        this.uiCycleInfo = document.createElement('div');
-        this.uiPerformance = document.createElement('div');
-        
-        this.uiElement.appendChild(this.uiShaderInfo);
-        this.uiElement.appendChild(this.uiCycleInfo);
-        this.uiElement.appendChild(this.uiPerformance);
-        
+        this.uiElement.style.position = 'fixed';
+        this.uiElement.style.top = '10px';
+        this.uiElement.style.right = '10px';
+        this.uiElement.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.uiElement.style.color = 'white';
+        this.uiElement.style.padding = '10px';
+        this.uiElement.style.borderRadius = '5px';
+        this.uiElement.style.fontFamily = 'monospace';
+        this.uiElement.style.fontSize = '12px';
+        this.uiElement.style.zIndex = '1000';
+        this.uiElement.style.cursor = 'default';
+        this.uiElement.style.minWidth = '200px';
+        this.uiElement.style.maxWidth = '300px';
+        this.uiElement.style.lineHeight = '1.3';
+        this.uiElement.innerHTML = 'Time: 0.0s<br>Frame Time: 0.00 ms<br>FPS: 0<br>Meshes: 0';
         document.body.appendChild(this.uiElement);
     }
 
@@ -139,36 +132,51 @@ class VRProfiler {
         if (!this.meshCountTimer || performance.now() - this.meshCountTimer > 1000) {
             this.meshCountTimer = performance.now();
             
-            if (!this.carouselEntity || !this.carouselEntity.object3D) {
-                this.meshCount = 0;
-                return;
-            }
+            // Find the entity with the carousel component
+            const carouselEntity = document.querySelector('[carousel]');
             
-            // Count only visible meshes in the carousel's object3D
-            this.meshCount = 0;
-            this.carouselEntity.object3D.traverse((child) => {
-                if ((child.isMesh || child.type === 'Mesh') && child.visible) {
-                    let parentEntity = child.el || child.parent?.el;
-                    if (!parentEntity || parentEntity.getAttribute('visible') !== false) {
-                        this.meshCount++;
+            if (carouselEntity && carouselEntity.object3D) {
+                // Count only visible meshes in the carousel's object3D
+                this.meshCount = 0;
+                carouselEntity.object3D.traverse((child) => {
+                    // Check if it's a mesh and is visible
+                    if ((child.isMesh || child.type === 'Mesh') && child.visible) {
+                        // Also check if the parent entity is visible (A-Frame entities have visible attribute)
+                        let parentEntity = child.el || child.parent?.el;
+                        if (!parentEntity || parentEntity.getAttribute('visible') !== false) {
+                            this.meshCount++;
+                        }
                     }
-                }
-            });
+                });
+            } else {
+                // Fallback: count A-Frame mesh entities under carousel entity
+                this.meshCount = this.countCarouselA_FrameMeshes();
+            }
         }
     }
 
     getCurrentShaderInfo() {
-        if (!this.carouselEntity) {
+        const carouselEntity = document.querySelector('[carousel]');
+        if (!carouselEntity) {
             return { name: null, params: null };
         }
 
-        const shaderEntities = this.carouselEntity.querySelectorAll('[tsl-shader]:not([visible="false"])');
+        // Find the first visible entity with tsl-shader component in the carousel
+        const shaderEntities = carouselEntity.querySelectorAll('[tsl-shader]:not([visible="false"])');
         
         if (shaderEntities.length === 0) {
             return { name: null, params: null };
         }
 
+        // Get the first visible shader entity (most recent one added)
         const firstShaderEntity = shaderEntities[0];
+        const tslShaderComponent = firstShaderEntity.components['tsl-shader'];
+        
+        if (!tslShaderComponent) {
+            return { name: null, params: null };
+        }
+
+        // Parse the shader attribute string
         const attrValue = firstShaderEntity.getAttribute('tsl-shader');
         const parsedParams = {};
         
@@ -217,11 +225,38 @@ class VRProfiler {
         return { name: shaderName, params: params };
     }
 
+    getUsedShaders() {
+        const shaderUsage = {};
+        const shaderDetails = {};
+        
+        for (const entry of this.performanceData) {
+            if (entry.shaderName && entry.shaderName !== null) {
+                if (!shaderUsage[entry.shaderName]) {
+                    shaderUsage[entry.shaderName] = 0;
+                    shaderDetails[entry.shaderName] = entry.shaderParams;
+                }
+                shaderUsage[entry.shaderName]++;
+            }
+        }
+        
+        // Convert to array with usage statistics
+        return Object.entries(shaderUsage).map(([name, count]) => ({
+            name: name,
+            sampleCount: count,
+            percentage: parseFloat(((count / this.performanceData.length) * 100).toFixed(1)),
+            parameters: shaderDetails[name]
+        })).sort((a, b) => b.sampleCount - a.sampleCount);
+    }
+
     destroy() {
         // Clear all intervals
         if (this.logInterval) {
             clearInterval(this.logInterval);
             this.logInterval = null;
+        }
+        if (this.carouselStoppedCheckInterval) {
+            clearInterval(this.carouselStoppedCheckInterval);
+            this.carouselStoppedCheckInterval = null;
         }
         if (this.cycleCheckInterval) {
             clearInterval(this.cycleCheckInterval);
@@ -234,121 +269,136 @@ class VRProfiler {
             this.cycleCompleteTimer = null;
         }
         
+        // Disconnect entity observer
+        if (this.entityObserver) {
+            this.entityObserver.disconnect();
+            this.entityObserver = null;
+        }
+        
         // Remove UI element
         if (this.uiElement && this.uiElement.parentNode) {
             this.uiElement.parentNode.removeChild(this.uiElement);
         }
         
-        // Clear data and references
+        // Clear data
         this.performanceData = [];
-        this.carouselEntity = null;
-        this.carousel = null;
-        
-        console.log('VRProfiler destroyed');
+        this.trackedEntities.clear();
+    }
+
+    countCarouselA_FrameMeshes() {
+        // Count visible A-Frame mesh entities specifically under the carousel entity
+        const carouselEntity = document.querySelector('[carousel]');
+        if (carouselEntity) {
+            const meshEntities = carouselEntity.querySelectorAll('a-box:not([visible="false"]), a-sphere:not([visible="false"]), a-cylinder:not([visible="false"]), a-plane:not([visible="false"]), a-circle:not([visible="false"]), a-ring:not([visible="false"]), a-torus:not([visible="false"]), a-cone:not([visible="false"]), a-tetrahedron:not([visible="false"]), a-octahedron:not([visible="false"]), a-dodecahedron:not([visible="false"]), a-icosahedron:not([visible="false"]), a-obj-model:not([visible="false"]), a-gltf-model:not([visible="false"]), [geometry]:not([visible="false"])');
+            return meshEntities.length;
+        }
+        return 0;
     }
 
     updateUI() {
         const currentTimeSeconds = (performance.now() / 1000).toFixed(1);
         const shaderInfo = this.getCurrentShaderInfo();
         
+        // Get current carousel rotation angle
+        const carouselEntity = document.querySelector('[carousel]');
         let rotationAngle = null;
-        if (this.carousel && this.carousel.angle !== undefined) {
-            rotationAngle = this.carousel.angle % 360;
+        if (carouselEntity && carouselEntity.components && carouselEntity.components.carousel) {
+            rotationAngle = carouselEntity.components.carousel.angle % 360;
         }
         
-        // Update shader info section (less frequently changed)
-        let shaderText = '';
+        let displayText = '';
+        
+        // Shader info at the top
         if (shaderInfo.name) {
-            shaderText = `Shader: ${shaderInfo.name}<br>`;
+            displayText += `Shader: ${shaderInfo.name}<br>`;
             if (shaderInfo.params && Object.keys(shaderInfo.params).length > 0) {
                 const paramEntries = Object.entries(shaderInfo.params);
+                // Limit to first 3 most important parameters to avoid UI overflow
                 const displayParams = paramEntries.slice(0, 3);
                 const paramStr = displayParams
                     .map(([key, value]) => {
+                        // Format value nicely
                         if (typeof value === 'number') {
                             return `${key}: ${value.toString()}`;
+                        } else if (typeof value === 'string' && value.startsWith('#')) {
+                            return `${key}: ${value}`;
                         }
                         return `${key}: ${value}`;
                     })
                     .join(', ');
-                shaderText += `<small>${paramStr}${paramEntries.length > 3 ? '...' : ''}</small><br>`;
+                displayText += `<small>${paramStr}${paramEntries.length > 3 ? '...' : ''}</small><br>`;
             }
-            shaderText += '<br>';
-        }
-        if (this.uiShaderInfo.innerHTML !== shaderText) {
-            this.uiShaderInfo.innerHTML = shaderText;
+            displayText += '<br>'; // Add separator line
         }
         
-        // Update cycle info section
-        const cycleText = `<strong>Scale: ${this.currentScale} | Cycle: ${this.completedCycles}/${this.config.targetCycles}</strong><br><br>`;
-        if (this.uiCycleInfo.innerHTML !== cycleText) {
-            this.uiCycleInfo.innerHTML = cycleText;
-        }
+        // Scale cycling info
+        displayText += `<strong>Scale: ${this.currentScale} | Cycle: ${this.completedCycles}/${this.targetCycles}</strong><br><br>`;
         
-        // Update performance section (frequently changed)
-        let perfText = `Time: ${currentTimeSeconds}s<br>Frame Time: ${this.frameTime.toFixed(2)} ms<br>FPS: ${this.fps.toFixed(1)}<br>Meshes: ${this.meshCount}`;
+        // Performance metrics
+        displayText += `Time: ${currentTimeSeconds}s<br>Frame Time: ${this.frameTime.toFixed(2)} ms<br>FPS: ${this.fps.toFixed(1)}<br>Meshes: ${this.meshCount}`;
         
+        // Show rotation angle and sampling status
         if (rotationAngle !== null) {
-            const isAt90 = Math.abs(rotationAngle - 90) < this.config.angleThreshold;
-            const isAt270 = Math.abs(rotationAngle - 270) < this.config.angleThreshold;
+            const isAt90 = Math.abs(rotationAngle - 90) < this.angleThreshold;
+            const isAt270 = Math.abs(rotationAngle - 270) < this.angleThreshold;
             const sampling = (isAt90 || isAt270) ? ' 🔴' : '';
-            perfText += `<br>Angle: ${rotationAngle.toFixed(1)}°${sampling}`;
-            perfText += `<br>Samples: ${this.performanceData.length}`;
+            displayText += `<br>Angle: ${rotationAngle.toFixed(1)}°${sampling}`;
+            displayText += `<br>Samples: ${this.performanceData.length}`;
         }
         
-        this.uiPerformance.innerHTML = perfText;
+        this.uiElement.innerHTML = displayText;
     }
 
     startLogging() {
         // Track last logged angle to prevent duplicate samples
         this.lastLoggedAngle = null;
+        // Wider threshold to catch fast rotation (520°/sec = 26° per 50ms)
+        this.angleThreshold = 30; // Degrees of tolerance for angle detection
         
-        if (this.logInterval) {
-            clearInterval(this.logInterval);
-        }
-
         this.logInterval = setInterval(() => {
-            if (!this.carousel || this.carousel.angle === undefined) {
-                return;
+            // Get current carousel rotation angle
+            const carouselEntity = document.querySelector('[carousel]');
+            if (!carouselEntity || !carouselEntity.components || !carouselEntity.components.carousel) {
+                return; // Carousel not ready yet
             }
             
-            const currentAngle = this.carousel.angle % 360;
+            const carousel = carouselEntity.components.carousel;
+            const currentAngle = carousel.angle % 360; // Normalize to 0-359 degrees
             
-            // Check if we're at any target angle
-            const isAtTargetAngle = this.config.sampleAngles.some(targetAngle => 
-                Math.abs(currentAngle - targetAngle) < this.config.angleThreshold
-            );
+            // Check if we're at 90 or 270 degrees (with tolerance)
+            const isAt90 = Math.abs(currentAngle - 90) < this.angleThreshold;
+            const isAt270 = Math.abs(currentAngle - 270) < this.angleThreshold;
             
-            if (isAtTargetAngle) {
-                const targetAngle = this.config.sampleAngles.find(angle => 
-                    Math.abs(currentAngle - angle) < this.config.angleThreshold
-                );
+            // Only log if we're at target angle and haven't logged this angle recently
+            if (isAt90 || isAt270) {
+                const targetAngle = isAt90 ? 90 : 270;
                 
-                // Prevent duplicate samples
+                // Prevent duplicate samples at same angle position
                 if (this.lastLoggedAngle === targetAngle) {
                     return;
                 }
                 
-                // Prevent memory leak
-                if (this.performanceData.length >= this.config.maxSamples) {
-                    this.performanceData.shift();
+                // Prevent memory leak by limiting array size
+                if (this.performanceData.length > 10000) {
+                    this.performanceData.shift(); // Remove oldest entry
                 }
                 
                 const timestamp = performance.now();
+                const timeSeconds = parseFloat((timestamp / 1000).toFixed(1));
                 const shaderInfo = this.getCurrentShaderInfo();
                 
                 const logEntry = {
-                    timeSeconds: parseFloat((timestamp / 1000).toFixed(1)),
+                    timeSeconds: timeSeconds,
                     timestampMs: parseFloat(timestamp.toFixed(2)),
                     frameTime: parseFloat(this.frameTime.toFixed(2)),
                     fps: parseFloat(this.fps.toFixed(1)),
                     meshCount: this.meshCount,
-                    rotationAngle: targetAngle,
-                    scale: this.currentScale,
+                    rotationAngle: targetAngle, // Record which angle we sampled at
+                    scale: this.currentScale, // Record the current scale
                     cycleNumber: this.completedCycles
                 };
 
-                // Only include shader info if changed
+                // Only include shader info if it changed
                 if (shaderInfo.name !== this.lastShaderName || 
                     JSON.stringify(shaderInfo.params) !== JSON.stringify(this.lastShaderParams)) {
                     logEntry.shaderName = shaderInfo.name;
@@ -360,46 +410,51 @@ class VRProfiler {
                 this.performanceData.push(logEntry);
                 this.lastLoggedAngle = targetAngle;
                 
-                console.log(`Sample at ${targetAngle}° - FPS: ${logEntry.fps}, Scale: ${this.currentScale}, Cycle: ${this.completedCycles}`);
+                console.log(`Sample taken at ${targetAngle}° - FPS: ${logEntry.fps}, Scale: ${this.currentScale}, Cycle: ${this.completedCycles}, Shader: ${shaderInfo.name || 'None'}`);
             } else {
-                // Reset when between target angles
-                const resetAngles = [0, 180, 360];
-                if (resetAngles.some(angle => Math.abs(currentAngle - angle) < this.config.angleThreshold)) {
+                // Reset last logged angle when we're between target angles (at 0° or 180°)
+                if (currentAngle < this.angleThreshold || 
+                    currentAngle > (360 - this.angleThreshold) ||
+                    Math.abs(currentAngle - 180) < this.angleThreshold) {
                     this.lastLoggedAngle = null;
                 }
             }
-        }, this.config.sampleInterval);
+        }, 50); // Check every 50ms to catch fast rotation (520°/sec)
     }
 
     startCycleMonitoring() {
-        if (this.cycleCheckInterval) {
-            clearInterval(this.cycleCheckInterval);
-        }
-
         this.cycleCheckInterval = setInterval(() => {
-            if (!this.carousel) {
-                return;
+            const carouselEntity = document.querySelector('[carousel]');
+            if (!carouselEntity || !carouselEntity.components || !carouselEntity.components.carousel) {
+                return; // Carousel not ready yet
             }
             
+            const carousel = carouselEntity.components.carousel;
+            
+            // Get maxCount from carousel data if not already retrieved
             if (this.maxMeshCount === null) {
-                this.maxMeshCount = this.carousel.data.maxCount || 5;
-                console.log(`Carousel maxCount: ${this.maxMeshCount}`);
+                this.maxMeshCount = carousel.data.maxCount || 5;
+                console.log(`Carousel maxCount detected: ${this.maxMeshCount}`);
             }
             
+            // Check if we've reached the target mesh count
             if (this.meshCount >= this.maxMeshCount) {
+                // If we just reached the count, start the 3-second timer
                 if (!this.meshCountReached && !this.cycleCompleteTimer) {
                     this.meshCountReached = true;
-                    console.log(`Mesh count reached (${this.meshCount}/${this.maxMeshCount}), waiting ${this.config.cycleDelay / 1000}s...`);
+                    console.log(`Mesh count reached (${this.meshCount}/${this.maxMeshCount}), waiting 3 seconds before next cycle...`);
                     
+                    // Wait 3 seconds before completing the cycle
                     this.cycleCompleteTimer = setTimeout(() => {
                         this.onCycleComplete();
                         this.meshCountReached = false;
                         this.cycleCompleteTimer = null;
-                    }, this.config.cycleDelay);
+                    }, 3000);
                 }
             } else {
+                // Reset if mesh count drops below max (shouldn't happen, but safety check)
                 if (this.meshCountReached) {
-                    console.log(`Mesh count dropped, resetting timer`);
+                    console.log(`Mesh count dropped below max, resetting timer`);
                     if (this.cycleCompleteTimer) {
                         clearTimeout(this.cycleCompleteTimer);
                         this.cycleCompleteTimer = null;
@@ -412,78 +467,140 @@ class VRProfiler {
 
     onCycleComplete() {
         this.completedCycles++;
-        console.log(`✓ Cycle ${this.completedCycles} completed`);
+        console.log(`Cycle ${this.completedCycles} completed!`);
         
-        if (this.completedCycles >= this.config.targetCycles) {
-            console.log(`✓ All ${this.config.targetCycles} cycles completed!`);
+        // Check if we've completed all target cycles
+        if (this.completedCycles >= this.targetCycles) {
+            console.log('All 4 cycles completed! Offering download...');
             this.proposeDownload();
         } else {
+            // Move to the next scale
             this.currentScaleIndex++;
-            if (this.currentScaleIndex < this.config.scales.length) {
-                this.currentScale = this.config.scales[this.currentScaleIndex];
-                console.log(`→ Changing to scale ${this.currentScale}`);
+            if (this.currentScaleIndex < this.scales.length) {
+                this.currentScale = this.scales[this.currentScaleIndex];
+                console.log(`Changing scale to ${this.currentScale}`);
                 
-                this.updateShaderScale(this.currentScale);
-                this.recreateCarousel();
-                
-                this.showNotification(`Scale ${this.currentScale} - Cycle ${this.completedCycles + 1}/${this.config.targetCycles}`, 2000);
+                // Clear existing meshes and recreate with new scale
+                this.clearCarouselMeshes(this.currentScale, () => {
+                    this.showNotification(`Scale changed to ${this.currentScale}. Restarting carousel...`, 2000);
+                });
             }
         }
     }
 
-    async recreateCarousel() {
+    clearCarouselMeshes(newScale, callback) {
         const scene = document.querySelector('a-scene');
-        const oldCarousel = this.carouselEntity;
+        const oldCarousel = document.querySelector('[carousel]');
         
-        if (!oldCarousel || !scene) {
-            console.error('Carousel or scene not found');
+        if (!oldCarousel) {
+            console.warn('Carousel entity not found');
+            if (callback) callback();
             return;
         }
 
-        console.log(`� Recreating carousel at scale ${this.currentScale}`);
+        console.log(`🗑️ Destroying entire carousel entity with ${this.trackedEntities.size} tracked entities`);
 
-        // Save configuration
+        // Store the carousel configuration
         const carouselConfig = oldCarousel.getAttribute('carousel');
-        const template = oldCarousel.querySelector('[tsl-shader]');
-        const templateClone = template ? template.cloneNode(true) : null;
-
-        // Dispose and remove old carousel
-        this.disposeEntityTree(oldCarousel);
-        oldCarousel.parentNode.removeChild(oldCarousel);
-
-        // Wait for cleanup
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Create new carousel
-        const newCarousel = document.createElement('a-entity');
-        newCarousel.setAttribute('carousel', carouselConfig);
         
-        if (templateClone) {
-            newCarousel.appendChild(templateClone);
+        // Use the original template info that we captured at startup
+        // This ensures we always have the correct template, not a cloned entity
+        if (!this.originalTemplateInfo) {
+            console.error('Original template info not available! Cannot recreate carousel.');
+            if (callback) callback();
+            return;
         }
+
+        console.log('Using original template info:', this.originalTemplateInfo);
+
+        // Properly dispose of all Three.js resources in the carousel
+        this.disposeEntityTree(oldCarousel);
+
+        // Remove the entire carousel entity from DOM
+        oldCarousel.parentNode.removeChild(oldCarousel);
         
-        scene.appendChild(newCarousel);
-        
-        // Update references
-        await new Promise(resolve => setTimeout(resolve, 50));
-        this.updateCarouselReferences();
-        
-        console.log(`✓ Carousel recreated with scale ${this.currentScale}`);
+        // Clear our tracking
+        this.trackedEntities.clear();
+
+        console.log(`✓ Old carousel destroyed and garbage collected`);
+
+        // Wait a bit for cleanup, then recreate the carousel from scratch
+        setTimeout(() => {
+            console.log(`🔄 Creating fresh carousel entity with scale ${newScale}`);
+            
+            // Create a brand new carousel entity
+            const newCarousel = document.createElement('a-entity');
+            
+            // Create a completely fresh template using the original template info
+            const freshTemplate = document.createElement(this.originalTemplateInfo.tagName);
+            freshTemplate.setAttribute('radius', this.originalTemplateInfo.radius);
+            
+            // Parse the ORIGINAL shader attribute and update scale
+            console.log(`Parsing original shader attribute: ${this.originalTemplateInfo.shaderAttr}`);
+            const pairs = this.originalTemplateInfo.shaderAttr.split(';').map(s => s.trim()).filter(s => s);
+            const params = {};
+            
+            pairs.forEach(pair => {
+                const [key, ...valueParts] = pair.split(':');
+                const value = valueParts.join(':').trim();
+                if (key && value) {
+                    params[key.trim()] = value;
+                }
+            });
+            
+            console.log(`Extracted params from original:`, params);
+            
+            // Update scale to new value
+            params.scale = newScale.toString();
+            
+            console.log(`Updated params with new scale ${newScale}:`, params);
+            
+            const newShaderAttr = Object.entries(params)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('; ');
+            
+            freshTemplate.setAttribute('tsl-shader', newShaderAttr);
+            console.log(`✓ Created fresh template with shader attr: ${newShaderAttr}`);
+            
+            // Add template to carousel FIRST
+            newCarousel.appendChild(freshTemplate);
+            
+            // NOW set the carousel attribute after template is present
+            newCarousel.setAttribute('carousel', carouselConfig);
+            
+            // Add carousel to the scene
+            scene.appendChild(newCarousel);
+            
+            console.log(`✓ Fresh carousel created and added to scene`);
+            
+            // Execute the callback if provided
+            if (callback) {
+                callback();
+            }
+            
+            console.log(`✓ Carousel ready - scale is ${newScale}`);
+        }, 100);
     }
 
     disposeEntityTree(entity) {
+        // Recursively dispose of entity and all its children
         if (!entity) return;
 
-        const allEntities = [entity, ...entity.querySelectorAll('*')];
         let disposedCount = 0;
 
+        // Get all children first (including nested)
+        const allEntities = [entity, ...entity.querySelectorAll('*')];
+
         allEntities.forEach(el => {
+            // Dispose Three.js object3D if it exists
             if (el.object3D) {
                 el.object3D.traverse((obj) => {
-                    if (obj.geometry && obj.geometry.dispose) {
+                    // Dispose geometry
+                    if (obj.geometry) {
                         obj.geometry.dispose();
                     }
 
+                    // Dispose material(s) and textures
                     if (obj.material) {
                         if (Array.isArray(obj.material)) {
                             obj.material.forEach(mat => this.disposeMaterialAndTextures(mat));
@@ -493,6 +610,7 @@ class VRProfiler {
                     }
                 });
 
+                // Remove from scene graph
                 if (el.object3D.parent) {
                     el.object3D.parent.remove(el.object3D);
                 }
@@ -500,6 +618,7 @@ class VRProfiler {
                 disposedCount++;
             }
 
+            // Remove A-Frame components
             if (el.components) {
                 Object.keys(el.components).forEach(name => {
                     if (el.components[name].remove) {
@@ -509,12 +628,11 @@ class VRProfiler {
             }
         });
 
-        console.log(`  Disposed ${disposedCount} entities`);
+        console.log(`  Disposed ${disposedCount} entities with their geometries and materials`);
     }
 
     disposeMaterialAndTextures(material) {
-        if (!material) return;
-
+        // Dispose all texture types
         const textureProperties = [
             'map', 'lightMap', 'bumpMap', 'normalMap', 'specularMap',
             'envMap', 'alphaMap', 'aoMap', 'displacementMap', 'emissiveMap',
@@ -527,127 +645,149 @@ class VRProfiler {
             }
         });
 
+        // Dispose the material itself
         if (material.dispose) {
             material.dispose();
         }
     }
 
     updateShaderScale(newScale) {
-        if (!this.carouselEntity) return;
+        // Since we destroy and recreate the carousel, we need to update the template
+        // before the next cycle starts. The clearCarouselMeshes will preserve this.
+        const carouselEntity = document.querySelector('[carousel]');
+        if (!carouselEntity) {
+            console.warn('⚠️ Carousel entity not found when trying to update scale');
+            return;
+        }
 
-        const template = this.carouselEntity.querySelector('[tsl-shader]');
+        // Find the template entity with tsl-shader component
+        const template = carouselEntity.querySelector('[tsl-shader]');
         
-        if (template) {
-            const currentAttr = template.getAttribute('tsl-shader');
-            if (typeof currentAttr === 'string') {
-                const pairs = currentAttr.split(';').map(s => s.trim()).filter(s => s);
-                const params = {};
-                
-                pairs.forEach(pair => {
-                    const [key, ...valueParts] = pair.split(':');
-                    const value = valueParts.join(':').trim();
-                    if (key && value) {
-                        params[key.trim()] = value;
-                    }
-                });
-                
-                params.scale = newScale.toString();
-                
-                const newAttrString = Object.entries(params)
-                    .map(([key, value]) => `${key}: ${value}`)
-                    .join('; ');
-                
-                template.setAttribute('tsl-shader', newAttrString);
-                console.log(`  Updated template scale to ${newScale}`);
-            }
+        if (!template) {
+            console.warn('⚠️ Template entity not found when trying to update scale');
+            return;
+        }
+        
+        const currentAttr = template.getAttribute('tsl-shader');
+        console.log(`📝 Current shader attribute before update: ${currentAttr}`);
+        
+        if (typeof currentAttr === 'string') {
+            // Parse the attribute string
+            const pairs = currentAttr.split(';').map(s => s.trim()).filter(s => s);
+            const params = {};
+            
+            pairs.forEach(pair => {
+                const [key, ...valueParts] = pair.split(':');
+                const value = valueParts.join(':').trim();
+                if (key && value) {
+                    params[key.trim()] = value;
+                }
+            });
+            
+            const oldScale = params.scale || 'not set';
+            
+            // Update the scale parameter
+            params.scale = newScale.toString();
+            
+            // Reconstruct the attribute string
+            const newAttrString = Object.entries(params)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('; ');
+            
+            // Set the updated attribute on the template
+            template.setAttribute('tsl-shader', newAttrString);
+            
+            // Verify the update
+            const verifyAttr = template.getAttribute('tsl-shader');
+            console.log(`✓ Updated template shader scale: ${oldScale} → ${newScale}`);
+            console.log(`✓ Verified new attribute: ${verifyAttr}`);
+        } else {
+            console.warn('⚠️ Shader attribute is not a string, cannot update scale');
         }
     }
 
     proposeDownload() {
-        // Stop all monitoring
+        // Stop logging
         if (this.logInterval) {
             clearInterval(this.logInterval);
             this.logInterval = null;
         }
         
+        // Stop checking carousel status
+        if (this.carouselStoppedCheckInterval) {
+            clearInterval(this.carouselStoppedCheckInterval);
+            this.carouselStoppedCheckInterval = null;
+        }
+        
+        // Stop cycle monitoring
         if (this.cycleCheckInterval) {
             clearInterval(this.cycleCheckInterval);
             this.cycleCheckInterval = null;
         }
 
-        // Make UI clickable
-        Object.assign(this.uiElement.style, {
-            cursor: 'pointer',
-            backgroundColor: 'rgba(76, 175, 80, 0.8)',
-            border: '2px solid #4CAF50'
+        // Make the info box clickable for download
+        this.uiElement.style.cursor = 'pointer';
+        this.uiElement.style.backgroundColor = 'rgba(76, 175, 80, 0.8)'; // Green background to indicate clickable
+        this.uiElement.style.border = '2px solid #4CAF50';
+        
+        // Add click handler to the info box
+        this.uiElement.addEventListener('click', () => {
+            this.downloadStats();
         });
         
-        this.uiElement.addEventListener('click', () => this.downloadStats(), { once: true });
+        // Update the UI to show it's clickable
+        this.uiElement.innerHTML += '<br><small>📊 Click to download stats</small>';
         
-        // Update UI
-        const clickPrompt = document.createElement('div');
-        clickPrompt.innerHTML = '<br><small>📊 Click to download stats</small>';
-        this.uiElement.appendChild(clickPrompt);
-        
-        this.showNotification(`${this.config.targetCycles} cycles completed! Click to download stats.`);
+        // Show a notification
+        this.showNotification('4 cycles completed! Click the info box to download performance stats.');
     }
 
     downloadStats() {
         try {
+            // Prevent multiple downloads
             if (this.uiElement.style.cursor === 'not-allowed') {
                 return;
             }
             
-            Object.assign(this.uiElement.style, {
-                cursor: 'not-allowed',
-                backgroundColor: 'rgba(255, 152, 0, 0.8)'
-            });
-            
-            this.uiElement.querySelector('small').textContent = '⬇️ Downloading...';
+            // Indicate download in progress
+            this.uiElement.style.cursor = 'not-allowed';
+            this.uiElement.style.backgroundColor = 'rgba(255, 152, 0, 0.8)'; // Orange background
+            this.uiElement.innerHTML = this.uiElement.innerHTML.replace('📊 Click to download stats', '⬇️ Downloading...');
             
             // Calculate statistics per scale
             const scaleStats = {};
-            this.config.scales.forEach(scale => {
+            this.scales.forEach(scale => {
                 const scaleData = this.performanceData.filter(entry => entry.scale === scale);
                 if (scaleData.length > 0) {
-                    const fps = scaleData.map(e => e.fps);
-                    const frameTime = scaleData.map(e => e.frameTime);
-                    
                     scaleStats[`scale_${scale}`] = {
                         scale: scale,
                         sampleCount: scaleData.length,
-                        averageFPS: parseFloat((fps.reduce((a, b) => a + b, 0) / fps.length).toFixed(1)),
-                        averageFrameTime: parseFloat((frameTime.reduce((a, b) => a + b, 0) / frameTime.length).toFixed(2)),
-                        minFPS: parseFloat(Math.min(...fps).toFixed(1)),
-                        maxFPS: parseFloat(Math.max(...fps).toFixed(1)),
-                        standardDeviationFPS: this.calculateStdDev(fps)
+                        averageFPS: parseFloat((scaleData.reduce((sum, entry) => sum + entry.fps, 0) / scaleData.length).toFixed(1)),
+                        averageFrameTime: parseFloat((scaleData.reduce((sum, entry) => sum + entry.frameTime, 0) / scaleData.length).toFixed(2)),
+                        minFPS: parseFloat(Math.min(...scaleData.map(e => e.fps)).toFixed(1)),
+                        maxFPS: parseFloat(Math.max(...scaleData.map(e => e.fps)).toFixed(1))
                     };
                 }
             });
             
-            const allFPS = this.performanceData.map(e => e.fps);
-            const allFrameTime = this.performanceData.map(e => e.frameTime);
-            
             const stats = {
-                metadata: {
-                    version: '2.0',
-                    generatedAt: new Date().toISOString(),
-                    configuration: this.config
-                },
                 summary: {
                     totalSamples: this.performanceData.length,
                     completedCycles: this.completedCycles,
-                    scalesUsed: this.config.scales,
-                    durationSeconds: this.performanceData.length > 0 ? 
-                        parseFloat((this.performanceData[this.performanceData.length - 1].timeSeconds - this.performanceData[0].timeSeconds).toFixed(1)) : 0,
-                    overallAverageFPS: parseFloat((allFPS.reduce((a, b) => a + b, 0) / allFPS.length).toFixed(1)),
-                    overallAverageFrameTime: parseFloat((allFrameTime.reduce((a, b) => a + b, 0) / allFrameTime.length).toFixed(2)),
-                    minFPS: parseFloat(Math.min(...allFPS).toFixed(1)),
-                    maxFPS: parseFloat(Math.max(...allFPS).toFixed(1)),
-                    standardDeviationFPS: this.calculateStdDev(allFPS)
+                    scalesUsed: this.scales,
+                    startTimeSeconds: this.performanceData.length > 0 ? 
+                        this.performanceData[0].timeSeconds : 0,
+                    endTimeSeconds: this.performanceData.length > 0 ? 
+                        this.performanceData[this.performanceData.length - 1].timeSeconds : 0,
+                    overallAverageFPS: this.performanceData.length > 0 ? 
+                        parseFloat((this.performanceData.reduce((sum, entry) => sum + entry.fps, 0) / this.performanceData.length).toFixed(1)) : 0,
+                    overallAverageFrameTime: this.performanceData.length > 0 ? 
+                        parseFloat((this.performanceData.reduce((sum, entry) => sum + entry.frameTime, 0) / this.performanceData.length).toFixed(2)) : 0,
+                    minFPS: this.performanceData.length > 0 ? parseFloat(Math.min(...this.performanceData.map(e => e.fps)).toFixed(1)) : 0,
+                    maxFPS: this.performanceData.length > 0 ? parseFloat(Math.max(...this.performanceData.map(e => e.fps)).toFixed(1)) : 0
                 },
                 scaleStatistics: scaleStats,
-                samples: this.performanceData
+                data: this.performanceData
             };
 
             const dataStr = JSON.stringify(stats, null, 2);
@@ -656,54 +796,44 @@ class VRProfiler {
             
             const link = document.createElement('a');
             link.href = url;
-            link.download = `perf-stats-${this.config.scales.join('-')}-${Date.now()}.json`;
+            link.download = `performance-stats-scales-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            
             URL.revokeObjectURL(url);
             
+            // Update UI to show download completed
             setTimeout(() => {
-                this.uiElement.style.backgroundColor = 'rgba(33, 150, 243, 0.8)';
-                this.uiElement.querySelector('small').textContent = '✅ Downloaded';
-                this.showNotification('Stats downloaded successfully!');
+                this.uiElement.style.backgroundColor = 'rgba(33, 150, 243, 0.8)'; // Blue background
+                this.uiElement.innerHTML = this.uiElement.innerHTML.replace('⬇️ Downloading...', '✅ Downloaded');
+                this.showNotification('Performance stats downloaded successfully!');
             }, 500);
         } catch (error) {
-            console.error('Download failed:', error);
-            this.showNotification('Error downloading stats. Check console.', 5000);
-            Object.assign(this.uiElement.style, {
-                cursor: 'pointer',
-                backgroundColor: 'rgba(244, 67, 54, 0.8)'
-            });
-            this.uiElement.querySelector('small').textContent = '❌ Error - Try again';
+            console.error('Failed to download stats:', error);
+            this.showNotification('Error downloading stats. Check console.');
+            this.uiElement.style.cursor = 'pointer';
+            this.uiElement.style.backgroundColor = 'rgba(244, 67, 54, 0.8)'; // Red background
+            this.uiElement.innerHTML = this.uiElement.innerHTML.replace('⬇️ Downloading...', '❌ Error - Try again');
         }
-    }
-
-    calculateStdDev(values) {
-        if (values.length === 0) return 0;
-        const avg = values.reduce((a, b) => a + b, 0) / values.length;
-        const variance = values.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / values.length;
-        return parseFloat(Math.sqrt(variance).toFixed(2));
     }
 
     showNotification(message, duration = 3000) {
         const notification = document.createElement('div');
         notification.textContent = message;
-        Object.assign(notification.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-            color: 'white',
-            padding: '20px',
-            borderRadius: '10px',
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '16px',
-            zIndex: '10000',
-            maxWidth: '300px',
-            textAlign: 'center',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
-        });
+        notification.style.position = 'fixed';
+        notification.style.top = '50%';
+        notification.style.left = '50%';
+        notification.style.transform = 'translate(-50%, -50%)';
+        notification.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        notification.style.color = 'white';
+        notification.style.padding = '20px';
+        notification.style.borderRadius = '10px';
+        notification.style.fontFamily = 'Arial, sans-serif';
+        notification.style.fontSize = '16px';
+        notification.style.zIndex = '10000';
+        notification.style.maxWidth = '300px';
+        notification.style.textAlign = 'center';
         
         document.body.appendChild(notification);
         
@@ -715,15 +845,7 @@ class VRProfiler {
     }
 }
 
-// Initialize with optional configuration
+// Initialize the profiler when the DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Example with custom configuration:
-    // const profiler = new VRProfiler({
-    //     scales: [1, 2, 4, 8],
-    //     targetCycles: 5,
-    //     sampleAngles: [0, 90, 180, 270],
-    //     cycleDelay: 5000
-    // });
-    
     const profiler = new VRProfiler();
 });
