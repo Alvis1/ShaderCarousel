@@ -1,20 +1,24 @@
 // ShaderLoader03.js - TSL Shader Component for A-Frame WebGPU
 // Simple loader for TSL shaders
 
-document.addEventListener('DOMContentLoaded', () => {
-    AFRAME.registerComponent('tsl-shader', {
-        schema: {
-            type: 'string'
-        },
-        
-        multiple: true,
-        
-        init() {
-            this.setupMaterial();
-        },
+import AFRAME from 'aframe';
+import * as THREE from 'three';
+
+AFRAME.registerComponent('tsl-shader', {
+    schema: {
+        type: 'string'
+    },
+    
+    multiple: true,
+    
+    init() {
+        console.log('[tsl-shader] Component init on:', this.el.tagName, 'with attribute:', this.el.getAttribute('tsl-shader'));
+        this.setupMaterial();
+    },
         
         async setupMaterial() {
             const attrValue = this.el.getAttribute('tsl-shader');
+            console.log('[tsl-shader] setupMaterial called with:', attrValue);
             
             // Parse the attribute string manually
             const params = {};
@@ -46,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 const shaderModule = await import(shaderPath);
+                console.log('[tsl-shader] Loaded shader module from:', shaderPath);
                 let shaderFunction = shaderModule[shaderFunctionName];
                 
                 if (!shaderFunction) {
@@ -120,16 +125,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-        },
-        
-        kebabToCamel(str) {
-            return str.replace(/-([a-z])/g, function (g) { 
-                return g[1].toUpperCase(); 
-            });
-        },
-        
-        update() {
-            this.setupMaterial();
-        }
-    });
+    },
+    
+    kebabToCamel(str) {
+        return str.replace(/-([a-z])/g, function (g) { 
+            return g[1].toUpperCase(); 
+        });
+    },
+    
+    update() {
+        console.log('[tsl-shader] update() called, reloading shader');
+        this.setupMaterial();
+    }
 });

@@ -35,10 +35,12 @@
     </script>
     
     <!-- Load TSL Shader Component -->
-    <script src="./shaderloader03.js"></script>
+    <script src="./shaderloader03.js" type="module"></script>
     
     <!-- Load VR Profiler Component -->
-    <script src="./vrprofiler02.js"></script>
+    <!-- Use vrprofiler02.js for single shader profiling with multiple scales -->
+    <!-- Use vrprofiler03.js for automatic multi-shader profiling -->
+    <script src="./vrprofiler03.js"></script>
     
     <script src="./carousel.js" type="module"></script>
     
@@ -48,8 +50,8 @@
       <!-- 3D Performance Display in Center -->
       <a-entity perfdata="position: 0 1.5 -2; color: #00ff00; size: 0.8; depth: 0.3; centerDisplay: true"></a-entity>
       
-      <a-entity carousel="radius: 10; speed: 520; maxCount: 5;">
-        <a-sphere radius="1.25" tsl-shader="src: ./tsl/wood.js; scale: 2.5; rings: 10; lengths: 1; angle: 0; fibers: 0.3; fibersDensity: 10; color: 0.8,0.4,0; background: 0.4,0.1,0; seed: 0"></a-sphere>
+      <a-entity carousel="radius: 10; speed: 120; maxCount: 3;">
+        <a-sphere radius="1.25" tsl-shader="src: ./tsl/brain.js;"></a-sphere>
       </a-entity>
 
       <a-entity camera="fov: 80" position="0 1.5 12" rotation="-35 0 0"></a-entity>
@@ -483,4 +485,69 @@ SPECIAL SHADER NOTES:
 - fordite.js: Generates rainbow coloring, main color parameter controls blending
 - planet.js: Complex terrain shader with multiple color layers and elevation controls
 
+===================================================================
+VR PROFILER CONFIGURATION (vrprofiler02.js & vrprofiler03.js)
+===================================================================
+
+VRPROFILER02 - Single Shader Multi-Scale Profiler:
+- Profiles ONE shader across multiple scales
+- Useful for testing performance impact of scale parameter
+- Runs 4 complete cycles with scales: [1, 3, 6, 10]
+
+VRPROFILER03 - Multi-Shader Auto Profiler:
+- Automatically cycles through ALL shaders in tsl/ folder
+- Profiles 50 shaders with same settings as vrprofiler02
+- Runs 4 cycles per shader (one cycle per scale: 1, 3, 6, 10)
+- Total cycles: 200 (50 shaders × 4 cycles each)
+
+Configuration Parameters (both profilers):
+  scales: [1, 3, 6, 10]           - Array of scale values to test
+  targetCycles: 4                  - Number of cycles per shader (vrprofiler02)
+  shaderCyclesPerShader: 4        - Number of cycles per shader (vrprofiler03)
+  sampleAngles: [90, 270]         - Rotation angles (degrees) where samples are taken
+  angleThreshold: 30               - Tolerance for angle sampling (±degrees)
+  sampleInterval: 50               - How often to check angle (milliseconds)
+  maxSamples: 10000               - Maximum samples before memory cleanup
+  cycleDelay: 3000                - Wait time after mesh count reached (milliseconds)
+  carouselRetryLimit: 50          - Max retries to find carousel
+
+Usage Examples:
+
+
+Default Configuration (if no options provided):
+- Both profilers use same defaults: scales [1, 3, 6, 10], 4 cycles
+- vrprofiler02: tests one shader 4 times (one per scale)
+- vrprofiler03: tests all 50 shaders, 4 cycles each = 200 total cycles
+
+Output Data Structure:
+{
+  metadata: {
+    version: "3.0",
+    profilerType: "Multi-Shader Profiler",
+    generatedAt: "ISO timestamp",
+    configuration: { ... }
+  },
+  summary: {
+    totalShaders: 50,
+    totalSamples: N,
+    completedCycles: 200,
+    overallAverageFPS: N,
+    minFPS: N,
+    maxFPS: N,
+    ...
+  },
+  shaderStatistics: {
+    "brain": { averageFPS, minFPS, maxFPS, sampleCount, ... },
+    "marble": { ... },
+    ...
+  },
+  scaleStatistics: {
+    "scale_1": { averageFPS, minFPS, maxFPS, ... },
+    "scale_3": { ... },
+    ...
+  },
+  samples: [ { fps, frameTime, shaderIndex, shaderFile, ... }, ... ]
+}
+
 -->
+
