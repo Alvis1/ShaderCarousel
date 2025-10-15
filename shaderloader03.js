@@ -82,6 +82,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         else if (value.startsWith('#')) {
                             shaderParams[key] = new THREE.Color(value);
                         }
+                        // Check if it's comma-separated RGB values (e.g., "0.8,0.4,0")
+                        else if (value.includes(',')) {
+                            const parts = value.split(',').map(s => parseFloat(s.trim()));
+                            if (parts.length === 3 && parts.every(p => !isNaN(p))) {
+                                shaderParams[key] = new THREE.Color(parts[0], parts[1], parts[2]);
+                            } else {
+                                shaderParams[key] = value;
+                            }
+                        }
                         // Otherwise keep as string
                         else {
                             shaderParams[key] = value;

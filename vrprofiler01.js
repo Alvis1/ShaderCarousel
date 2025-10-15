@@ -100,12 +100,26 @@ class VRProfiler {
             return { name: null, params: null };
         }
 
-        const shaderData = tslShaderComponent.data;
+        // Parse the shader attribute string
+        const attrValue = firstShaderEntity.getAttribute('tsl-shader');
+        const parsedParams = {};
+        
+        if (typeof attrValue === 'string') {
+            const pairs = attrValue.split(';').map(s => s.trim()).filter(s => s);
+            pairs.forEach(pair => {
+                const [key, ...valueParts] = pair.split(':');
+                const value = valueParts.join(':').trim();
+                if (key && value) {
+                    parsedParams[key.trim()] = value;
+                }
+            });
+        }
+        
         let shaderName = 'Unknown';
         
         // Extract shader name from src path
-        if (shaderData.src) {
-            const pathParts = shaderData.src.split('/');
+        if (parsedParams.src) {
+            const pathParts = parsedParams.src.split('/');
             const fileName = pathParts[pathParts.length - 1];
             shaderName = fileName.replace('.js', '').replace(/-/g, ' ');
             // Capitalize first letter of each word
@@ -116,20 +130,20 @@ class VRProfiler {
 
         // Extract meaningful parameters (excluding default/empty values)
         const params = {};
-        const importantParams = ['count', 'size', 'blur', 'scale', 'roughness', 'metalness', 'speed', 'smooth', 'wave'];
+        const importantParams = ['count', 'size', 'blur', 'scale', 'roughness', 'metalness', 'speed', 'smooth', 'wave', 'rings', 'fibers'];
         
         for (const param of importantParams) {
-            if (shaderData[param] !== undefined && shaderData[param] !== 0) {
-                params[param] = shaderData[param];
+            if (parsedParams[param] !== undefined && parsedParams[param] !== '0') {
+                params[param] = parsedParams[param];
             }
         }
 
         // Add color parameters if they're not default
-        if (shaderData.color && shaderData.color !== '#000000') {
-            params.color = shaderData.color;
+        if (parsedParams.color && parsedParams.color !== '#000000') {
+            params.color = parsedParams.color;
         }
-        if (shaderData.background && shaderData.background !== '#ffffff') {
-            params.bg = shaderData.background;
+        if (parsedParams.background && parsedParams.background !== '#ffffff') {
+            params.bg = parsedParams.background;
         }
 
         return { name: shaderName, params: params };
