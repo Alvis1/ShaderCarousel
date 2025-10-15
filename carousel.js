@@ -135,6 +135,14 @@ AFRAME.registerComponent('carousel', {
   addEntity: function () {
     const template = this.templates[this.nextTemplateIndex];
     const newEntity = template.cloneNode(true);
+    
+    // Explicitly copy the tsl-shader attribute to ensure it's not lost during cloning
+    const shaderAttr = template.getAttribute('tsl-shader');
+    if (shaderAttr) {
+      newEntity.setAttribute('tsl-shader', shaderAttr);
+      console.log(`Cloned entity with tsl-shader: ${shaderAttr}`);
+    }
+    
     newEntity.setAttribute('visible', true);
     
     // Find the furthest available vertex

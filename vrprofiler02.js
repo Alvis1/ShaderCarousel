@@ -26,11 +26,40 @@ class VRProfiler {
         // Track all created entities for proper cleanup
         this.trackedEntities = new Set();
         
+        // Store original template info (captured once at startup)
+        this.originalTemplateInfo = null;
+        
         this.createUI();
+        this.captureOriginalTemplate();
         this.startProfiling();
         this.startLogging();
         this.startCycleMonitoring();
         this.startEntityTracking();
+    }
+
+    captureOriginalTemplate() {
+        // Wait for carousel to initialize, then capture the template info
+        setTimeout(() => {
+            const carousel = document.querySelector('[carousel]');
+            if (!carousel) {
+                console.warn('Carousel not found, retrying...');
+                setTimeout(() => this.captureOriginalTemplate(), 100);
+                return;
+            }
+
+            // Get the first child - this is the template before any cloning happens
+            const template = carousel.querySelector('[tsl-shader]');
+            if (template) {
+                this.originalTemplateInfo = {
+                    tagName: template.tagName.toLowerCase(),
+                    radius: template.getAttribute('radius'),
+                    shaderAttr: template.getAttribute('tsl-shader')
+                };
+                console.log('✓ Captured original template info:', this.originalTemplateInfo);
+            } else {
+                console.error('Could not find template with tsl-shader attribute');
+            }
+        }, 500);
     }
 
     startEntityTracking() {
@@ -451,32 +480,38 @@ class VRProfiler {
                 this.currentScale = this.scales[this.currentScaleIndex];
                 console.log(`Changing scale to ${this.currentScale}`);
                 
-                // First update the shader scale in the template
-                this.updateShaderScale(this.currentScale);
-                
-                // Then clear existing meshes to restart the carousel with new scale
-                this.clearCarouselMeshes();
-                
-                this.showNotification(`Scale changed to ${this.currentScale}. Restarting carousel...`, 2000);
+                // Clear existing meshes and recreate with new scale
+                this.clearCarouselMeshes(this.currentScale, () => {
+                    this.showNotification(`Scale changed to ${this.currentScale}. Restarting carousel...`, 2000);
+                });
             }
         }
     }
 
-    clearCarouselMeshes() {
+    clearCarouselMeshes(newScale, callback) {
         const scene = document.querySelector('a-scene');
         const oldCarousel = document.querySelector('[carousel]');
         
         if (!oldCarousel) {
             console.warn('Carousel entity not found');
+            if (callback) callback();
             return;
         }
 
         console.log(`🗑️ Destroying entire carousel entity with ${this.trackedEntities.size} tracked entities`);
 
-        // Store the carousel configuration and template
+        // Store the carousel configuration
         const carouselConfig = oldCarousel.getAttribute('carousel');
-        const template = oldCarousel.querySelector('[tsl-shader]');
-        const templateClone = template ? template.cloneNode(true) : null;
+        
+        // Use the original template info that we captured at startup
+        // This ensures we always have the correct template, not a cloned entity
+        if (!this.originalTemplateInfo) {
+            console.error('Original template info not available! Cannot recreate carousel.');
+            if (callback) callback();
+            return;
+        }
+
+        console.log('Using original template info:', this.originalTemplateInfo);
 
         // Properly dispose of all Three.js resources in the carousel
         this.disposeEntityTree(oldCarousel);
@@ -489,24 +524,61 @@ class VRProfiler {
 
         console.log(`✓ Old carousel destroyed and garbage collected`);
 
-        // Wait a bit for cleanup, then recreate the carousel
+        // Wait a bit for cleanup, then recreate the carousel from scratch
         setTimeout(() => {
-            console.log(`🔄 Creating fresh carousel entity`);
+            console.log(`🔄 Creating fresh carousel entity with scale ${newScale}`);
             
             // Create a brand new carousel entity
             const newCarousel = document.createElement('a-entity');
+            
+            // Create a completely fresh template using the original template info
+            const freshTemplate = document.createElement(this.originalTemplateInfo.tagName);
+            freshTemplate.setAttribute('radius', this.originalTemplateInfo.radius);
+            
+            // Parse the ORIGINAL shader attribute and update scale
+            console.log(`Parsing original shader attribute: ${this.originalTemplateInfo.shaderAttr}`);
+            const pairs = this.originalTemplateInfo.shaderAttr.split(';').map(s => s.trim()).filter(s => s);
+            const params = {};
+            
+            pairs.forEach(pair => {
+                const [key, ...valueParts] = pair.split(':');
+                const value = valueParts.join(':').trim();
+                if (key && value) {
+                    params[key.trim()] = value;
+                }
+            });
+            
+            console.log(`Extracted params from original:`, params);
+            
+            // Update scale to new value
+            params.scale = newScale.toString();
+            
+            console.log(`Updated params with new scale ${newScale}:`, params);
+            
+            const newShaderAttr = Object.entries(params)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('; ');
+            
+            freshTemplate.setAttribute('tsl-shader', newShaderAttr);
+            console.log(`✓ Created fresh template with shader attr: ${newShaderAttr}`);
+            
+            // Add template to carousel FIRST
+            newCarousel.appendChild(freshTemplate);
+            
+            // NOW set the carousel attribute after template is present
             newCarousel.setAttribute('carousel', carouselConfig);
             
-            // Add the template back
-            if (templateClone) {
-                newCarousel.appendChild(templateClone);
-            }
-            
-            // Add it to the scene
+            // Add carousel to the scene
             scene.appendChild(newCarousel);
             
             console.log(`✓ Fresh carousel created and added to scene`);
-            console.log(`✓ Starting with 1 mesh, will add more on rotation`);
+            
+            // Execute the callback if provided
+            if (callback) {
+                callback();
+            }
+            
+            console.log(`✓ Carousel ready - scale is ${newScale}`);
         }, 100);
     }
 
@@ -584,40 +656,53 @@ class VRProfiler {
         // before the next cycle starts. The clearCarouselMeshes will preserve this.
         const carouselEntity = document.querySelector('[carousel]');
         if (!carouselEntity) {
-            console.warn('Carousel entity not found');
+            console.warn('⚠️ Carousel entity not found when trying to update scale');
             return;
         }
 
         // Find the template entity with tsl-shader component
         const template = carouselEntity.querySelector('[tsl-shader]');
         
-        if (template) {
-            const currentAttr = template.getAttribute('tsl-shader');
-            if (typeof currentAttr === 'string') {
-                // Parse the attribute string
-                const pairs = currentAttr.split(';').map(s => s.trim()).filter(s => s);
-                const params = {};
-                
-                pairs.forEach(pair => {
-                    const [key, ...valueParts] = pair.split(':');
-                    const value = valueParts.join(':').trim();
-                    if (key && value) {
-                        params[key.trim()] = value;
-                    }
-                });
-                
-                // Update the scale parameter
-                params.scale = newScale.toString();
-                
-                // Reconstruct the attribute string
-                const newAttrString = Object.entries(params)
-                    .map(([key, value]) => `${key}: ${value}`)
-                    .join('; ');
-                
-                // Set the updated attribute on the template
-                template.setAttribute('tsl-shader', newAttrString);
-                console.log(`✓ Updated template shader scale to ${newScale}`);
-            }
+        if (!template) {
+            console.warn('⚠️ Template entity not found when trying to update scale');
+            return;
+        }
+        
+        const currentAttr = template.getAttribute('tsl-shader');
+        console.log(`📝 Current shader attribute before update: ${currentAttr}`);
+        
+        if (typeof currentAttr === 'string') {
+            // Parse the attribute string
+            const pairs = currentAttr.split(';').map(s => s.trim()).filter(s => s);
+            const params = {};
+            
+            pairs.forEach(pair => {
+                const [key, ...valueParts] = pair.split(':');
+                const value = valueParts.join(':').trim();
+                if (key && value) {
+                    params[key.trim()] = value;
+                }
+            });
+            
+            const oldScale = params.scale || 'not set';
+            
+            // Update the scale parameter
+            params.scale = newScale.toString();
+            
+            // Reconstruct the attribute string
+            const newAttrString = Object.entries(params)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('; ');
+            
+            // Set the updated attribute on the template
+            template.setAttribute('tsl-shader', newAttrString);
+            
+            // Verify the update
+            const verifyAttr = template.getAttribute('tsl-shader');
+            console.log(`✓ Updated template shader scale: ${oldScale} → ${newScale}`);
+            console.log(`✓ Verified new attribute: ${verifyAttr}`);
+        } else {
+            console.warn('⚠️ Shader attribute is not a string, cannot update scale');
         }
     }
 
